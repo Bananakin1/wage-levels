@@ -38,22 +38,40 @@
   }
 
   // State abbreviation to full name (built from geography)
+  // Use stateAb field as primary source, then fill gaps from FIPS_TO_AB for
+  // states that only appear as cross-state MSA counties
   const AB_TO_NAME = {};
   for (const info of Object.values(geography)) {
-    if (!AB_TO_NAME[info.stateAb]) {
+    if (info.stateAb && !AB_TO_NAME[info.stateAb]) {
       AB_TO_NAME[info.stateAb] = info.state;
     }
   }
+  // Fill in any missing state names (e.g., RI only appears in cross-state MSAs)
+  const STATE_FULL_NAMES = {
+    'AL':'Alabama','AK':'Alaska','AZ':'Arizona','AR':'Arkansas','CA':'California',
+    'CO':'Colorado','CT':'Connecticut','DE':'Delaware','DC':'District of Columbia',
+    'FL':'Florida','GA':'Georgia','HI':'Hawaii','ID':'Idaho','IL':'Illinois',
+    'IN':'Indiana','IA':'Iowa','KS':'Kansas','KY':'Kentucky','LA':'Louisiana',
+    'ME':'Maine','MD':'Maryland','MA':'Massachusetts','MI':'Michigan','MN':'Minnesota',
+    'MS':'Mississippi','MO':'Missouri','MT':'Montana','NE':'Nebraska','NV':'Nevada',
+    'NH':'New Hampshire','NJ':'New Jersey','NM':'New Mexico','NY':'New York',
+    'NC':'North Carolina','ND':'North Dakota','OH':'Ohio','OK':'Oklahoma','OR':'Oregon',
+    'PA':'Pennsylvania','RI':'Rhode Island','SC':'South Carolina','SD':'South Dakota',
+    'TN':'Tennessee','TX':'Texas','UT':'Utah','VT':'Vermont','VA':'Virginia',
+    'WA':'Washington','WV':'West Virginia','WI':'Wisconsin','WY':'Wyoming'
+  };
+  for (const [ab, name] of Object.entries(STATE_FULL_NAMES)) {
+    if (!AB_TO_NAME[ab]) AB_TO_NAME[ab] = name;
+  }
 
-  // State FIPS to list of county count (from geography data)
+  // State FIPS to list of county count (from geography data, using FIPS prefix)
   const STATE_COUNTY_COUNTS = {};
   {
     const seenByState = {};
     for (const info of Object.values(geography)) {
-      const sf = AB_TO_FIPS[info.stateAb];
-      if (!sf) continue;
-      if (!seenByState[sf]) seenByState[sf] = new Set();
       for (const c of info.counties) {
+        const sf = c.fips.substring(0, STATE_FIPS_LENGTH);
+        if (!seenByState[sf]) seenByState[sf] = new Set();
         seenByState[sf].add(c.fips);
       }
     }
@@ -152,6 +170,11 @@
   });
 
   // ---------- Color computation ----------
+  // Check if an area has any county in the given state (by FIPS prefix)
+  function areaHasCountyInState(info, stateFips) {
+    return info.counties.some(c => c.fips.substring(0, STATE_FIPS_LENGTH) === stateFips);
+  }
+
   function getStateFillColor(stateFips, colorBy, occupation) {
     const ab = FIPS_TO_AB[stateFips];
     if (!ab) return NO_DATA_COLOR;
@@ -161,11 +184,11 @@
       const socData = wageIndex[occupation.soc];
       if (!socData) return NO_DATA_COLOR;
 
-      // Find all areas in this state and compute average
+      // Find all areas touching this state and compute average
       let sum = 0;
       let count = 0;
       for (const [area, info] of Object.entries(geography)) {
-        if (info.stateAb === ab && socData[area]) {
+        if (areaHasCountyInState(info, stateFips) && socData[area]) {
           const val = socData[area][colorBy];
           if (val != null) { sum += val; count++; }
         }
@@ -218,7 +241,7 @@
         const socData = wageIndex[occupation.soc];
         if (socData) {
           for (const [area, info] of Object.entries(geography)) {
-            if (info.stateAb === stateAb && socData[area]) {
+            if (areaHasCountyInState(info, currentStateFips) && socData[area]) {
               const val = socData[area][colorBy];
               if (val != null) values.push(val);
             }
@@ -226,7 +249,7 @@
         }
       } else {
         for (const [area, info] of Object.entries(geography)) {
-          if (info.stateAb === stateAb) {
+          if (areaHasCountyInState(info, currentStateFips)) {
             const areaAgg = aggregate.areas[area];
             if (areaAgg && areaAgg[colorBy] != null) values.push(areaAgg[colorBy]);
           }
@@ -237,11 +260,11 @@
       if (occupation) {
         const socData = wageIndex[occupation.soc];
         if (socData) {
-          for (const ab of Object.values(FIPS_TO_AB)) {
+          for (const [sf, ab] of Object.entries(FIPS_TO_AB)) {
             let sum = 0;
             let count = 0;
             for (const [area, info] of Object.entries(geography)) {
-              if (info.stateAb === ab && socData[area]) {
+              if (areaHasCountyInState(info, sf) && socData[area]) {
                 const val = socData[area][colorBy];
                 if (val != null) { sum += val; count++; }
               }
@@ -273,7 +296,7 @@
       let sums = { l1: 0, l2: 0, l3: 0, l4: 0, avg: 0 };
       let count = 0;
       for (const [area, info] of Object.entries(geography)) {
-        if (info.stateAb === ab && socData[area]) {
+        if (areaHasCountyInState(info, stateFips) && socData[area]) {
           for (const k of ['l1', 'l2', 'l3', 'l4', 'avg']) {
             sums[k] += socData[area][k] || 0;
           }

@@ -58,9 +58,72 @@ const ws = wb.Sheets[wb.SheetNames[0]];
 const cbsaRows = XLSX.utils.sheet_to_json(ws, { range: 2 });
 console.log(`  CBSA delineation: ${cbsaRows.length} rows`);
 
+// ── CT planning region FIPS → old county FIPS mapping ────────
+// CT replaced its 8 counties with 9 planning regions in 2022.
+// The TopoJSON still uses old county FIPS (09001-09015), but CBSA
+// delineation uses planning region codes (09110-09190).
+// This map translates each planning region to the old county(ies)
+// whose geography it primarily covers.
+// When multiple planning regions map to the same old county, the primary
+// (larger-population) MSA wins the mapping for choropleth purposes.
+// 09140 Naugatuck Valley spans parts of New Haven, Litchfield, and Fairfield
+// counties but those old FIPS are claimed by more significant MSAs (35300, 14860).
+// 09190 Western CT spans northern Fairfield — already claimed by 14860 Bridgeport.
+const CT_PLANNING_TO_OLD_COUNTIES = {
+  '09110': [{ fips: '09003', name: 'Hartford County' },
+            { fips: '09013', name: 'Tolland County' }],       // Capitol
+  '09120': [{ fips: '09001', name: 'Fairfield County' }],     // Greater Bridgeport (south Fairfield)
+  '09130': [{ fips: '09007', name: 'Middlesex County' }],     // Lower CT River Valley
+  '09140': [],                                                 // Naugatuck Valley — no unique old county
+  '09150': [{ fips: '09015', name: 'Windham County' }],       // Northeastern CT
+  '09160': [{ fips: '09005', name: 'Litchfield County' }],    // Northwest Hills
+  '09170': [{ fips: '09009', name: 'New Haven County' }],     // South Central CT
+  '09180': [{ fips: '09011', name: 'New London County' }],    // Southeastern CT
+  '09190': [],                                                 // Western CT — no unique old county
+};
+
+// CT planning region names → old county FIPS (for nonmetro matching)
+const CT_PLANNING_NAME_TO_COUNTIES = {
+  'northeastern connecticut planning region': [{ fips: '09015', name: 'Windham County' }],
+  'northwest hills planning region':          [{ fips: '09005', name: 'Litchfield County' }],
+  'capitol planning region':                  [{ fips: '09003', name: 'Hartford County' },
+                                               { fips: '09013', name: 'Tolland County' }],
+  'greater bridgeport planning region':       [{ fips: '09001', name: 'Fairfield County' }],
+  'lower connecticut river valley planning region': [{ fips: '09007', name: 'Middlesex County' }],
+  'naugatuck valley planning region':         [{ fips: '09009', name: 'New Haven County' }],
+  'south central connecticut planning region': [{ fips: '09009', name: 'New Haven County' }],
+  'southeastern connecticut planning region': [{ fips: '09011', name: 'New London County' }],
+  'western connecticut planning region':      [{ fips: '09001', name: 'Fairfield County' }],
+};
+
 // ── 2. Build FIPS map (CBSA code -> counties) ─────────────────
 console.log('\nBuilding FIPS map...');
-const fipsMap = buildFipsMap(cbsaRows);
+const fipsMapRaw = buildFipsMap(cbsaRows);
+
+// Replace CT planning region FIPS with old county FIPS in CBSA map
+const fipsMap = {};
+for (const [cbsa, counties] of Object.entries(fipsMapRaw)) {
+  const translated = [];
+  const seen = new Set();
+  for (const c of counties) {
+    const ctMapping = CT_PLANNING_TO_OLD_COUNTIES[c.fips];
+    if (ctMapping) {
+      for (const old of ctMapping) {
+        if (!seen.has(old.fips)) {
+          seen.add(old.fips);
+          translated.push(old);
+        }
+      }
+    } else {
+      if (!seen.has(c.fips)) {
+        seen.add(c.fips);
+        translated.push(c);
+      }
+    }
+  }
+  fipsMap[cbsa] = translated;
+}
+
 const fipsMapSize = Object.keys(fipsMap).length;
 console.log(`  CBSA codes mapped: ${fipsMapSize}`);
 
@@ -158,8 +221,21 @@ for (const row of geoRows) {
     nonmetroMap[area].push({ fips, name: countyName });
     nonmetroMatched++;
   } else {
-    console.warn(`  Unmatched nonmetro county: ${countyName} (${stateAb})`);
-    nonmetroUnmatched++;
+    // Try CT planning region name mapping
+    const ctMapping = CT_PLANNING_NAME_TO_COUNTIES[countyName.toLowerCase().trim()];
+    if (ctMapping && stateAb === 'CT') {
+      if (!nonmetroMap[area]) nonmetroMap[area] = [];
+      for (const old of ctMapping) {
+        // Avoid duplicate FIPS within the same area
+        if (!nonmetroMap[area].some(e => e.fips === old.fips)) {
+          nonmetroMap[area].push(old);
+          nonmetroMatched++;
+        }
+      }
+    } else {
+      console.warn(`  Unmatched nonmetro county: ${countyName} (${stateAb})`);
+      nonmetroUnmatched++;
+    }
   }
 }
 console.log(`  Nonmetro areas mapped: ${Object.keys(nonmetroMap).length}`);
@@ -277,8 +353,8 @@ for (const row of dedupRows) {
     continue;
   }
 
-  // Skip areas with no FIPS mapping
-  if (!combinedFipsMap[area]) {
+  // Skip areas with no FIPS mapping (or empty county list)
+  if (!combinedFipsMap[area] || combinedFipsMap[area].length === 0) {
     skippedNoFips++;
     continue;
   }
@@ -377,13 +453,31 @@ for (const [area, socWages] of Object.entries(wages)) {
   areaAggs[area] = meanOfWages(wageList);
 }
 
-// State averages: simple mean of area averages within each state
+// Reverse mapping: FIPS → state abbreviation
+const FIPS_TO_STATE_AB = {};
+for (const [ab, fips] of Object.entries(STATE_AB_TO_FIPS)) {
+  FIPS_TO_STATE_AB[fips] = ab;
+}
+
+// State averages: attribute each area to ALL states it has counties in.
+// This ensures cross-state MSA wages contribute to every state they touch.
 const stateAreaWages = {};
 for (const [area, agg] of Object.entries(areaAggs)) {
-  const geo = geoLookup[area];
-  if (!geo || !geo.stateAb) continue;
-  if (!stateAreaWages[geo.stateAb]) stateAreaWages[geo.stateAb] = [];
-  stateAreaWages[geo.stateAb].push(agg);
+  const geoInfo = geography[area];
+  if (!geoInfo) continue;
+
+  // Find all unique states this area touches via county FIPS prefixes
+  const statesInArea = new Set();
+  for (const c of geoInfo.counties) {
+    const sf = c.fips.substring(0, 2);
+    const ab = FIPS_TO_STATE_AB[sf];
+    if (ab) statesInArea.add(ab);
+  }
+
+  for (const ab of statesInArea) {
+    if (!stateAreaWages[ab]) stateAreaWages[ab] = [];
+    stateAreaWages[ab].push(agg);
+  }
 }
 
 const stateAggs = {};
