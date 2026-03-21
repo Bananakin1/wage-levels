@@ -1,0 +1,5 @@
+data/raw/
+node_modules/
+build/
+.svelte-kit/
+.superpowers/
