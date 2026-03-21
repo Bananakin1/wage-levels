@@ -11,11 +11,17 @@
     {#if data.sub}<div class="tt-sub">{data.sub}</div>{/if}
     {#if data.avg != null}
       <div class="tt-div"></div>
-      <div class="tt-row"><span class="tt-label">Level I</span><span class="tt-val">{formatWage(data.l1, filters.isAnnual)}</span></div>
-      <div class="tt-row"><span class="tt-label">Level II</span><span class="tt-val">{formatWage(data.l2, filters.isAnnual)}</span></div>
-      <div class="tt-row"><span class="tt-label">Level III</span><span class="tt-val">{formatWage(data.l3, filters.isAnnual)}</span></div>
-      <div class="tt-row"><span class="tt-label">Level IV</span><span class="tt-val">{formatWage(data.l4, filters.isAnnual)}</span></div>
-      <div class="tt-div"></div>
+      {#if data.l1 != null}
+        <div class="tt-row"><span class="tt-label">Level I</span><span class="tt-val">{formatWage(data.l1, filters.isAnnual)}</span></div>
+        <div class="tt-row"><span class="tt-label">Level II</span><span class="tt-val">{formatWage(data.l2, filters.isAnnual)}</span></div>
+        <div class="tt-row"><span class="tt-label">Level III</span><span class="tt-val">{formatWage(data.l3, filters.isAnnual)}</span></div>
+        <div class="tt-row"><span class="tt-label">Level IV</span><span class="tt-val">{formatWage(data.l4, filters.isAnnual)}</span></div>
+        <div class="tt-div"></div>
+      {:else}
+        <div class="tt-flag">High Wage / No Leveled Wage</div>
+        <div class="tt-flag-desc">Individual levels not available for this occupation in this area. Only the average is reported.</div>
+        <div class="tt-div"></div>
+      {/if}
       <div class="tt-row tt-avg"><span class="tt-label">Average</span><span class="tt-val">{formatWage(data.avg, filters.isAnnual)}</span></div>
     {/if}
     {#if data.meta}<div class="tt-meta">{data.meta}</div>{/if}
@@ -38,4 +44,6 @@
   .tt-avg .tt-val { color: #e0e0f0; font-weight: 500; }
   .tt-meta { font-size: 10px; color: #5858a0; margin-top: 6px; font-family: 'IBM Plex Mono', monospace; }
   .tt-hint { font-size: 10px; color: #5090c0; margin-top: 4px; font-style: italic; }
+  .tt-flag { font-size: 10px; color: #c08040; font-weight: 500; margin-bottom: 2px; }
+  .tt-flag-desc { font-size: 9px; color: #7070a0; line-height: 1.4; margin-bottom: 2px; max-width: 200px; }
 </style>

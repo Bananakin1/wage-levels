@@ -23,7 +23,16 @@
   <header class="header">
     <h1>Wage Explorer</h1>
     <p>
-      This tool combines occupation data from <a href="https://www.onetcenter.org" target="_blank" rel="noopener">O*NET</a> with prevailing wage data from the <a href="https://flag.dol.gov" target="_blank" rel="noopener">DOL Office of Foreign Labor Certification</a> so you can explore wages by occupation at the county level across the U.S., all in one place. Instead of cross referencing both websites manually, you can search for an occupation and instantly see how wage levels vary geographically. Wages are shown across four levels that represent percentiles of the pay distribution: Level I is roughly the 17th percentile (entry level), Level II the 34th, Level III the 50th, and Level IV the 67th. Current data covers July 2025 through June 2026, sourced from the May 2024 BLS Occupational Employment and Wage Statistics survey.
+      This tool combines occupation data from <a href="https://www.onetcenter.org" target="_blank" rel="noopener">O*NET</a> with prevailing wage data from the <a href="https://flag.dol.gov" target="_blank" rel="noopener">DOL Office of Foreign Labor Certification</a> so you can explore wages by occupation at the county level across the U.S., all in one place. Instead of cross referencing both websites manually, you can search for an occupation and instantly see how wage levels vary geographically.
+    </p>
+    <p>
+      Wages are shown across four levels that represent percentiles of the pay distribution: Level I is roughly the 17th percentile (entry level), Level II the 34th, Level III the 50th, and Level IV the 67th. Use the "Color by" dropdown to pick which level drives the map colors. Some occupations in certain areas are flagged as "High Wage" or "No Leveled Wage" by the DOL, meaning only an average wage is available and individual levels cannot be determined. These will show as empty when you select a specific level.
+    </p>
+    <p>
+      You can also filter occupations by Job Zone, which reflects how much preparation an occupation typically requires. Zone 1 means little or no preparation, Zone 5 means extensive education and experience. The Education filter narrows results by typical degree requirement. Both filters apply to the occupation search, helping you find roles that match your background.
+    </p>
+    <p>
+      Current data covers July 2025 through June 2026, sourced from the May 2024 BLS Occupational Employment and Wage Statistics survey.
     </p>
     <p class="attribution">
       O*NET data from U.S. Department of Labor, Employment and Training Administration, licensed under CC BY 4.0.
