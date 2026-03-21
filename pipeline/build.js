@@ -1,7 +1,6 @@
 import { readCSV, readTSV } from './lib/parse-csv.js';
 import { normalizeWage } from './lib/wage-normalizer.js';
 import { buildFipsMap } from './lib/fips-mapper.js';
-import { buildNonmetroMap } from './lib/nonmetro-mapper.js';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import XLSX from 'xlsx';
 import { resolve, dirname } from 'path';
@@ -99,17 +98,72 @@ for (const [cbsa, counties] of Object.entries(fipsMap)) {
 }
 console.log(`  Counties covered by CBSA with OFLC data: ${coveredFips.size}`);
 
-// ── 3. Build nonmetro map ──────────────────────────────────────
-console.log('\nBuilding nonmetro map...');
-// Identify geo rows whose Area is NOT a CBSA code in fipsMap
-const nonmetroGeoRows = geoRows.filter(r => {
-  const area = r.Area?.trim();
-  return area && !fipsMap[area];
-});
-console.log(`  Nonmetro geo rows: ${nonmetroGeoRows.length}`);
+// ── 3. Build nonmetro map from Geography.csv county assignments ─
+console.log('\nBuilding nonmetro map from Geography.csv...');
 
-const nonmetroMap = buildNonmetroMap(nonmetroGeoRows, allCountiesByState, coveredFips);
+// State abbreviation to FIPS mapping
+const STATE_AB_TO_FIPS = {
+  'AL':'01','AK':'02','AZ':'04','AR':'05','CA':'06','CO':'08','CT':'09','DE':'10',
+  'DC':'11','FL':'12','GA':'13','HI':'15','ID':'16','IL':'17','IN':'18','IA':'19',
+  'KS':'20','KY':'21','LA':'22','ME':'23','MD':'24','MA':'25','MI':'26','MN':'27',
+  'MS':'28','MO':'29','MT':'30','NE':'31','NV':'32','NH':'33','NJ':'34','NM':'35',
+  'NY':'36','NC':'37','ND':'38','OH':'39','OK':'40','OR':'41','PA':'42','RI':'44',
+  'SC':'45','SD':'46','TN':'47','TX':'48','UT':'49','VT':'50','VA':'51','WA':'53',
+  'WV':'54','WI':'55','WY':'56'
+};
+
+// Build lookup from national county file: "stateFips|normalizedName" → countyFips
+const countyNameToFips = {};
+for (const [stateFips, counties] of Object.entries(allCountiesByState)) {
+  for (const c of counties) {
+    const normalized = c.name.toLowerCase()
+      .replace(/ county$/, '').replace(/ parish$/, '').replace(/ borough$/, '')
+      .replace(/ census area$/, '').replace(/ municipality$/, '')
+      .replace(/ city and borough$/, '').replace(/ city$/, '').trim();
+    countyNameToFips[stateFips + '|' + normalized] = c.fips;
+    // Also store exact lowercase name as fallback
+    countyNameToFips[stateFips + '|' + c.name.toLowerCase().trim()] = c.fips;
+  }
+}
+
+// Map nonmetro Geography.csv entries to county FIPS directly
+const nonmetroMap = {};
+let nonmetroMatched = 0;
+let nonmetroUnmatched = 0;
+for (const row of geoRows) {
+  const area = row.Area?.replace(/"/g, '').trim();
+  if (!area) continue;
+  if (fipsMap[area]) continue; // Already a CBSA metro area
+
+  const stateAb = row.StateAb?.replace(/"/g, '').trim();
+  if (!stateAb) continue;
+  if (TERRITORY_STATES.has(stateAb)) continue;
+
+  const stateFips = STATE_AB_TO_FIPS[stateAb];
+  if (!stateFips) continue;
+
+  const countyName = row.CountyTownName?.replace(/"/g, '').trim();
+  if (!countyName) continue;
+
+  const normalized = countyName.toLowerCase()
+    .replace(/ county$/, '').replace(/ parish$/, '').replace(/ borough$/, '')
+    .replace(/ census area$/, '').replace(/ municipality$/, '')
+    .replace(/ city and borough$/, '').replace(/ city$/, '').trim();
+
+  const fips = countyNameToFips[stateFips + '|' + normalized]
+            || countyNameToFips[stateFips + '|' + countyName.toLowerCase().trim()];
+
+  if (fips) {
+    if (!nonmetroMap[area]) nonmetroMap[area] = [];
+    nonmetroMap[area].push({ fips, name: countyName });
+    nonmetroMatched++;
+  } else {
+    console.warn(`  Unmatched nonmetro county: ${countyName} (${stateAb})`);
+    nonmetroUnmatched++;
+  }
+}
 console.log(`  Nonmetro areas mapped: ${Object.keys(nonmetroMap).length}`);
+console.log(`  Nonmetro counties matched: ${nonmetroMatched}, unmatched: ${nonmetroUnmatched}`);
 
 // Combined FIPS map: CBSA + nonmetro
 const combinedFipsMap = { ...fipsMap, ...nonmetroMap };

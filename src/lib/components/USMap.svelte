@@ -449,22 +449,28 @@
     const stateFeature = stateFeatures.find(f => f.id === stateFips);
     if (!stateFeature) return;
 
-    // Compute bounds for zoom — use viewBox dimensions since path uses pre-projected coords
-    const VIEWBOX_WIDTH = 1060;
-    const VIEWBOX_HEIGHT = 700;
-    const VIEWBOX_X = -50;
-    const VIEWBOX_Y = -20;
     const [[x0, y0], [x1, y1]] = path.bounds(stateFeature);
-
-    const PADDING = 0.55;
     const dx = x1 - x0;
     const dy = y1 - y0;
-    const x = (x0 + x1) / 2;
-    const y = (y0 + y1) / 2;
-    const scale = PADDING / Math.max(dx / VIEWBOX_WIDTH, dy / VIEWBOX_HEIGHT);
-    const cx = VIEWBOX_X + VIEWBOX_WIDTH / 2;
-    const cy = VIEWBOX_Y + VIEWBOX_HEIGHT / 2;
-    const translate = [cx - scale * x, cy - scale * y];
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+
+    // viewBox dimensions
+    const vbW = 1060;
+    const vbH = 700;
+    const vbX = -50;
+    const vbY = -20;
+
+    // Scale so state fills ~40% of viewport (generous padding around edges)
+    const STATE_FILL_RATIO = 0.4;
+    const scale = STATE_FILL_RATIO / Math.max(dx / vbW, dy / vbH);
+
+    // Center of viewBox
+    const viewCx = vbX + vbW / 2;
+    const viewCy = vbY + vbH / 2;
+
+    // Translate so state center maps to viewBox center
+    const translate = [viewCx - scale * cx, viewCy - scale * cy];
 
     const transform = d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale);
 
