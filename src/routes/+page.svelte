@@ -23,12 +23,10 @@
   <header class="header">
     <h1>Wage Explorer</h1>
     <p>
-      Prevailing wage data aggregated from
-      <a href="https://www.onetcenter.org" target="_blank" rel="noopener">O*NET</a> and
-      <a href="https://flag.dol.gov" target="_blank" rel="noopener">OFLC</a>
-      to explore wage levels by occupation and U.S. geography.
-      <br />
-      <small>O*NET data from U.S. Department of Labor, Employment and Training Administration.</small>
+      This tool combines occupation data from <a href="https://www.onetcenter.org" target="_blank" rel="noopener">O*NET</a> with prevailing wage data from the <a href="https://flag.dol.gov" target="_blank" rel="noopener">DOL Office of Foreign Labor Certification</a> so you can explore wages by occupation at the county level across the U.S., all in one place. Instead of cross referencing both websites manually, you can search for an occupation and instantly see how wage levels vary geographically. Wages are shown across four levels that represent percentiles of the pay distribution: Level I is roughly the 17th percentile (entry level), Level II the 34th, Level III the 50th, and Level IV the 67th. Current data covers July 2025 through June 2026, sourced from the May 2024 BLS Occupational Employment and Wage Statistics survey.
+    </p>
+    <p class="attribution">
+      O*NET data from U.S. Department of Labor, Employment and Training Administration, licensed under CC BY 4.0.
     </p>
   </header>
 
@@ -69,7 +67,7 @@
   .header h1 { font-size: 16px; font-weight: 600; color: #e0e0f0; }
   .header p { font-size: 12px; color: #6868a0; margin-top: 2px; line-height: 1.5; }
   .header a { color: #5090c0; text-decoration: underline; text-underline-offset: 2px; }
-  .header small { color: #4848a0; font-size: 10px; }
+  .header :global(.attribution) { color: #4848a0; font-size: 10px; margin-top: 4px; }
   .map-wrap { flex: 1; position: relative; overflow: hidden; }
   .back-btn {
     position: absolute; top: 12px; left: 16px; background: #14142a;
