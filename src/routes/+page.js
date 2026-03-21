@@ -1,6 +1,7 @@
 import { base } from '$app/paths';
 
 export const prerender = true;
+export const ssr = false;
 
 export async function load({ fetch }) {
   const [wages, occupations, geography, aggregate] = await Promise.all([
