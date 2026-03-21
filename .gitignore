@@ -4,5 +4,5 @@ build/
 .svelte-kit/
 .superpowers/
 .playwright-mcp/
-.playwright-mcp/
 *.png
+!static/favicon.png
