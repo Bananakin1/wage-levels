@@ -12,6 +12,10 @@
 
 **Source data:** `/mnt/c/Users/vfizr/Downloads/OFLC_Wages_2025-26_Updated/`
 
+**Commit convention:** Do NOT include `Co-Authored-By` lines or any mention of Claude/AI in commit messages. Use standard conventional commit format only.
+
+**E2E validation:** Use Playwright MCP tools (`mcp__plugin_playwright_playwright__*`) for all browser-based testing and verification. Do NOT use manual "open browser and check" steps — automate via Playwright.
+
 ---
 
 ## File Structure
@@ -126,8 +130,9 @@ build/
 
 - [ ] **Step 6: Verify dev server starts**
 
-Run: `npm run dev`
-Expected: Page loads at localhost:5173 showing "Wage Explorer"
+Run: `npm run dev` (background)
+Use `mcp__plugin_playwright_playwright__browser_navigate` to `http://localhost:5173`.
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify "Wage Explorer" text is visible.
 
 - [ ] **Step 7: Verify static build works**
 
@@ -1702,33 +1707,104 @@ git commit -m "feat: add static build verification and deploy script"
 touch static/.nojekyll
 ```
 
-- [ ] **Step 2: Test the complete flow end-to-end**
+- [ ] **Step 2: Start dev server for Playwright testing**
 
-1. Load page → aggregate state map shows
-2. Search "Software Developer" → select → map recolors for SOC 15-1252
-3. Change "Color by" to Level I → map updates
-4. Click a state → county view appears with drill-down
-5. Drag to pan, scroll to zoom in county view
-6. Hover county → tooltip shows all 4 levels + average
-7. Select state from dropdown → same drill-down behavior
-8. Click "All states" → returns to national view
-9. Toggle $/yr → values update throughout
-10. Clear occupation → returns to aggregate view
+```bash
+npm run dev
+```
 
-- [ ] **Step 3: Fix any issues found in E2E testing**
+Keep running in background. All subsequent steps use Playwright MCP tools against `http://localhost:5173`.
 
-- [ ] **Step 4: Deploy to GitHub Pages**
+- [ ] **Step 3: E2E — Verify page loads with aggregate state map**
+
+Use `mcp__plugin_playwright_playwright__browser_navigate` to `http://localhost:5173`.
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify:
+- Header "Wage Explorer" is visible
+- Filter bar with all dropdowns is rendered
+- SVG map container with state paths exists
+- States are colored (not all gray)
+
+- [ ] **Step 4: E2E — Test occupation search and map update**
+
+Use `mcp__plugin_playwright_playwright__browser_fill_form` to type "Software Developer" in the search input.
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify search results dropdown appears.
+Use `mcp__plugin_playwright_playwright__browser_click` to select "Software Developers (15-1252)".
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify:
+- Search input shows selected occupation
+- Map colors have changed (state fill attributes updated)
+
+- [ ] **Step 5: E2E — Test Color By dropdown**
+
+Use `mcp__plugin_playwright_playwright__browser_click` on the "Color by" dropdown.
+Use `mcp__plugin_playwright_playwright__browser_click` to select "Level I".
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify map fill colors updated.
+
+- [ ] **Step 6: E2E — Test state drill-down via click**
+
+Use `mcp__plugin_playwright_playwright__browser_click` on a state path (e.g., Texas).
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify:
+- County paths are now visible
+- "All states" back button is visible
+- State dropdown shows the selected state
+
+- [ ] **Step 7: E2E — Test tooltip on county hover**
+
+Use `mcp__plugin_playwright_playwright__browser_hover` over a county path.
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify:
+- Tooltip is visible with county name
+- Tooltip shows Level I-IV + Average wage values
+- Tooltip shows SOC code, Job Zone, Education
+
+- [ ] **Step 8: E2E — Test back to national view**
+
+Use `mcp__plugin_playwright_playwright__browser_click` on "All states" button.
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify:
+- State paths are visible again
+- County paths are hidden
+- Back button is hidden
+
+- [ ] **Step 9: E2E — Test state dropdown navigation**
+
+Use `mcp__plugin_playwright_playwright__browser_click` on State dropdown.
+Use `mcp__plugin_playwright_playwright__browser_click` to select "California".
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify county view for California.
+
+- [ ] **Step 10: E2E — Test hourly/annual toggle**
+
+Use `mcp__plugin_playwright_playwright__browser_click` on "$/yr" toggle.
+Use `mcp__plugin_playwright_playwright__browser_hover` over a county.
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify tooltip values are in annual format (larger numbers, no decimals).
+
+- [ ] **Step 11: E2E — Test clear occupation returns to aggregate**
+
+Use `mcp__plugin_playwright_playwright__browser_click` on the clear (×) button in search.
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify:
+- Search input is empty
+- Map shows aggregate coloring again
+
+- [ ] **Step 12: Fix any issues found in E2E testing**
+
+- [ ] **Step 13: Verify static build works**
+
+```bash
+npm run build && npx serve build -l 4173
+```
+
+Use `mcp__plugin_playwright_playwright__browser_navigate` to `http://localhost:4173/h1b/`.
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify the static build matches dev.
+
+- [ ] **Step 14: Deploy to GitHub Pages**
 
 ```bash
 npm run deploy
 ```
 
-- [ ] **Step 5: Verify live site**
+- [ ] **Step 15: Verify live site via Playwright**
 
-Open: `https://<username>.github.io/h1b/`
-Expected: Full app working from GitHub Pages.
+Use `mcp__plugin_playwright_playwright__browser_navigate` to `https://<username>.github.io/h1b/`.
+Use `mcp__plugin_playwright_playwright__browser_snapshot` to verify full app working from GitHub Pages.
 
-- [ ] **Step 6: Final commit**
+- [ ] **Step 16: Final commit**
 
 ```bash
 git add -A
