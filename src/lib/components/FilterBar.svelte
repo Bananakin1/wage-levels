@@ -60,11 +60,14 @@
 
   const eduItems = [
     { value: '', label: 'All levels' },
-    { value: 'High school diploma or equivalent', label: 'High school' },
-    { value: "Associate's degree", label: "Associate's" },
-    { value: "Bachelor's degree", label: "Bachelor's" },
-    { value: "Master's degree", label: "Master's" },
-    { value: 'Doctoral or professional degree', label: 'Doctoral' },
+    { value: 'Less than High School', label: 'Less than HS' },
+    { value: 'High School Diploma', label: 'High school' },
+    { value: 'Post-Secondary Certificate', label: 'Post-secondary cert' },
+    { value: 'Some College', label: 'Some college' },
+    { value: "Associate's Degree", label: "Associate's" },
+    { value: "Bachelor's Degree", label: "Bachelor's" },
+    { value: "Master's Degree", label: "Master's" },
+    { value: "Doctoral Degree", label: "Doctoral" },
   ];
 
   const colorItems = [

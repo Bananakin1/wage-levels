@@ -436,7 +436,7 @@
 
     const onetCode = occupation.onetCode;
     if (onetCode) {
-      window.open('https://www.onetonline.org/link/summary/' + onetCode, '_blank');
+      window.open('https://www.onetonline.org/link/summary/' + onetCode, '_blank', 'noopener,noreferrer');
     }
   }
 
