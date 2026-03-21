@@ -133,7 +133,15 @@
 
     // Set up zoom behavior (disabled by default)
     zoom = d3.zoom()
-      .scaleExtent([1, 12])
+      .scaleExtent([0.5, 20])
+      .filter((event) => {
+        // Allow programmatic zooms (no sourceEvent) and drag events always
+        if (!event.sourceEvent) return true;
+        // Allow wheel zoom only with Ctrl/Meta key to prevent accidental scroll-zoom
+        if (event.type === 'wheel') return event.ctrlKey || event.metaKey;
+        // Allow all other events (mousedown for drag, touchstart, dblclick)
+        return true;
+      })
       .on('zoom', (event) => {
         stateGroup.attr('transform', event.transform);
         countyGroup.attr('transform', event.transform);
@@ -354,16 +362,21 @@
       if (area) wages = aggregate.areas[area] || null;
     }
 
-    if (!wages) {
-      onTooltip(null);
-      return;
-    }
-
     const rect = container.getBoundingClientRect();
     let x = event.clientX - rect.left + 12;
     let y = event.clientY - rect.top - 8;
     if (x + 200 > rect.width) x = event.clientX - rect.left - 210;
     if (y + 180 > rect.height) y = event.clientY - rect.top - 180;
+
+    if (!wages) {
+      // Show a basic "no data" tooltip for unmapped counties
+      onTooltip({
+        name: countyName,
+        sub: stateName,
+        hint: 'No wage data available',
+      }, x, y);
+      return;
+    }
 
     let meta = '';
     let hint = '';
@@ -437,24 +450,28 @@
     if (!stateFeature) return;
 
     // Compute bounds for zoom — use viewBox dimensions since path uses pre-projected coords
-    const VIEWBOX_WIDTH = 975;
-    const VIEWBOX_HEIGHT = 610;
+    const VIEWBOX_WIDTH = 1060;
+    const VIEWBOX_HEIGHT = 700;
+    const VIEWBOX_X = -50;
+    const VIEWBOX_Y = -20;
     const [[x0, y0], [x1, y1]] = path.bounds(stateFeature);
 
-    const PADDING = 0.85;
+    const PADDING = 0.80;
     const dx = x1 - x0;
     const dy = y1 - y0;
     const x = (x0 + x1) / 2;
     const y = (y0 + y1) / 2;
     const scale = PADDING / Math.max(dx / VIEWBOX_WIDTH, dy / VIEWBOX_HEIGHT);
-    const translate = [VIEWBOX_WIDTH / 2 - scale * x, VIEWBOX_HEIGHT / 2 - scale * y];
+    const cx = VIEWBOX_X + VIEWBOX_WIDTH / 2;
+    const cy = VIEWBOX_Y + VIEWBOX_HEIGHT / 2;
+    const translate = [cx - scale * x, cy - scale * y];
 
     const transform = d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale);
 
-    // Enable zoom and apply transform
+    // Enable zoom and apply transform with smooth interpolation
     svg.call(zoom);
     svg.transition()
-      .duration(600)
+      .duration(750)
       .call(zoom.transform, transform);
   }
 
@@ -463,17 +480,21 @@
 
     activeZoomState = null;
 
-    // Disable zoom
-    svg.on('.zoom', null);
+    // Smoothly transition back to identity transform before switching views
+    if (zoom) {
+      svg.call(zoom);
+      svg.transition()
+        .duration(750)
+        .call(zoom.transform, d3.zoomIdentity)
+        .on('end', () => {
+          // Disable zoom after transition completes
+          svg.on('.zoom', null);
+        });
+    }
 
     // Show state view, hide county view
     stateGroup.style('display', '');
     countyGroup.style('display', 'none');
-
-    // Reset transform
-    stateGroup.attr('transform', null);
-    countyGroup.attr('transform', null);
-    borderGroup.attr('transform', null);
   }
 
   // ---------- Reactive updates ----------
@@ -507,7 +528,7 @@
 </script>
 
 <div class="map-container" bind:this={container}>
-  <svg bind:this={svgEl} viewBox="0 0 975 610" preserveAspectRatio="xMidYMid meet"></svg>
+  <svg bind:this={svgEl} viewBox="-50 -20 1060 700" preserveAspectRatio="xMidYMid meet"></svg>
 </div>
 
 <style>

@@ -9,13 +9,15 @@
   <div class="tooltip" style="left: {x}px; top: {y}px;">
     <div class="tt-name">{data.name}</div>
     {#if data.sub}<div class="tt-sub">{data.sub}</div>{/if}
-    <div class="tt-div"></div>
-    <div class="tt-row"><span class="tt-label">Level I</span><span class="tt-val">{formatWage(data.l1, filters.isAnnual)}</span></div>
-    <div class="tt-row"><span class="tt-label">Level II</span><span class="tt-val">{formatWage(data.l2, filters.isAnnual)}</span></div>
-    <div class="tt-row"><span class="tt-label">Level III</span><span class="tt-val">{formatWage(data.l3, filters.isAnnual)}</span></div>
-    <div class="tt-row"><span class="tt-label">Level IV</span><span class="tt-val">{formatWage(data.l4, filters.isAnnual)}</span></div>
-    <div class="tt-div"></div>
-    <div class="tt-row tt-avg"><span class="tt-label">Average</span><span class="tt-val">{formatWage(data.avg, filters.isAnnual)}</span></div>
+    {#if data.avg != null}
+      <div class="tt-div"></div>
+      <div class="tt-row"><span class="tt-label">Level I</span><span class="tt-val">{formatWage(data.l1, filters.isAnnual)}</span></div>
+      <div class="tt-row"><span class="tt-label">Level II</span><span class="tt-val">{formatWage(data.l2, filters.isAnnual)}</span></div>
+      <div class="tt-row"><span class="tt-label">Level III</span><span class="tt-val">{formatWage(data.l3, filters.isAnnual)}</span></div>
+      <div class="tt-row"><span class="tt-label">Level IV</span><span class="tt-val">{formatWage(data.l4, filters.isAnnual)}</span></div>
+      <div class="tt-div"></div>
+      <div class="tt-row tt-avg"><span class="tt-label">Average</span><span class="tt-val">{formatWage(data.avg, filters.isAnnual)}</span></div>
+    {/if}
     {#if data.meta}<div class="tt-meta">{data.meta}</div>{/if}
     {#if data.hint}<div class="tt-hint">{data.hint}</div>{/if}
   </div>
