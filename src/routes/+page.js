@@ -29,5 +29,5 @@ export async function load({ fetch }) {
     }
   }
 
-  return { wages, occupations, geography, aggregate, fipsToArea, wageIndex };
+  return { occupations, geography, aggregate, fipsToArea, wageIndex };
 }

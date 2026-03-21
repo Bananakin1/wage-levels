@@ -19,6 +19,13 @@ const OUT     = `${ROOT}/static/data`;
 // ── Territory state abbreviations to skip ──────────────────────
 const TERRITORY_STATES = new Set(['AS', 'GU', 'MH', 'FM', 'MP', 'PW', 'PR', 'VI']);
 
+function normalizeCountyName(name) {
+  return name.toLowerCase()
+    .replace(/ county$/, '').replace(/ parish$/, '').replace(/ borough$/, '')
+    .replace(/ census area$/, '').replace(/ municipality$/, '')
+    .replace(/ city and borough$/, '').replace(/ city$/, '').trim();
+}
+
 // ── O*NET education category labels ────────────────────────────
 const EDU_LABELS = {
   '1':  'Less than High School',
@@ -55,6 +62,7 @@ console.log(`  Education:    ${eduRows.length} rows`);
 // Read CBSA xlsx
 const wb = XLSX.readFile(CBSA);
 const ws = wb.Sheets[wb.SheetNames[0]];
+// CBSA delineation xlsx has 2 header rows before data begins
 const cbsaRows = XLSX.utils.sheet_to_json(ws, { range: 2 });
 console.log(`  CBSA delineation: ${cbsaRows.length} rows`);
 
@@ -179,10 +187,7 @@ const STATE_AB_TO_FIPS = {
 const countyNameToFips = {};
 for (const [stateFips, counties] of Object.entries(allCountiesByState)) {
   for (const c of counties) {
-    const normalized = c.name.toLowerCase()
-      .replace(/ county$/, '').replace(/ parish$/, '').replace(/ borough$/, '')
-      .replace(/ census area$/, '').replace(/ municipality$/, '')
-      .replace(/ city and borough$/, '').replace(/ city$/, '').trim();
+    const normalized = normalizeCountyName(c.name);
     countyNameToFips[stateFips + '|' + normalized] = c.fips;
     // Also store exact lowercase name as fallback
     countyNameToFips[stateFips + '|' + c.name.toLowerCase().trim()] = c.fips;
@@ -208,10 +213,7 @@ for (const row of geoRows) {
   const countyName = row.CountyTownName?.replace(/"/g, '').trim();
   if (!countyName) continue;
 
-  const normalized = countyName.toLowerCase()
-    .replace(/ county$/, '').replace(/ parish$/, '').replace(/ borough$/, '')
-    .replace(/ census area$/, '').replace(/ municipality$/, '')
-    .replace(/ city and borough$/, '').replace(/ city$/, '').trim();
+  const normalized = normalizeCountyName(countyName);
 
   const fips = countyNameToFips[stateFips + '|' + normalized]
             || countyNameToFips[stateFips + '|' + countyName.toLowerCase().trim()];
@@ -428,7 +430,7 @@ console.log('\nBuilding aggregate.json...');
 function meanOfWages(wageList) {
   if (wageList.length === 0) return { l1: 0, l2: 0, l3: 0, l4: 0, avg: 0 };
   const sum = { l1: 0, l2: 0, l3: 0, l4: 0, avg: 0 };
-  let counts = { l1: 0, l2: 0, l3: 0, l4: 0, avg: 0 };
+  const counts = { l1: 0, l2: 0, l3: 0, l4: 0, avg: 0 };
   for (const w of wageList) {
     for (const k of ['l1', 'l2', 'l3', 'l4', 'avg']) {
       if (w[k] !== null) {

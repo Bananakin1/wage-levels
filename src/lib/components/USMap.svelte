@@ -4,6 +4,7 @@
   import * as d3 from 'd3';
   import * as topojson from 'topojson-client';
   import { createColorScale, NO_DATA_COLOR } from '$lib/utils/colors.js';
+  import { FIPS_TO_AB, AB_TO_FIPS, STATE_NAMES, STATE_FIPS_LENGTH } from '$lib/utils/geo.js';
   import { filters, mapState } from '$lib/state.svelte.js';
 
   let {
@@ -11,60 +12,30 @@
     aggregate,
     wageIndex,
     fipsToArea,
-    occupations,
     onTooltip,
   } = $props();
 
-  // ---------- Constants ----------
   const DIMMED_COLOR = '#06060a';
-  const STATE_FIPS_LENGTH = 2;
+  const VIEWBOX = { x: -60, y: -30, w: 1100, h: 670 };
+  const ZOOM_MIN = 0.5;
+  const ZOOM_MAX = 20;
+  const ZOOM_TRANSITION_MS = 750;
+  const STATE_FILL_RATIO = 0.5;
+  const TOOLTIP_WIDTH = 200;
+  const TOOLTIP_HEIGHT = 180;
 
-  // FIPS to state abbreviation mapping
-  const FIPS_TO_AB = {
-    '01':'AL','02':'AK','04':'AZ','05':'AR','06':'CA','08':'CO','09':'CT',
-    '10':'DE','11':'DC','12':'FL','13':'GA','15':'HI','16':'ID','17':'IL',
-    '18':'IN','19':'IA','20':'KS','21':'KY','22':'LA','23':'ME','24':'MD',
-    '25':'MA','26':'MI','27':'MN','28':'MS','29':'MO','30':'MT','31':'NE',
-    '32':'NV','33':'NH','34':'NJ','35':'NM','36':'NY','37':'NC','38':'ND',
-    '39':'OH','40':'OK','41':'OR','42':'PA','44':'RI','45':'SC','46':'SD',
-    '47':'TN','48':'TX','49':'UT','50':'VT','51':'VA','53':'WA','54':'WV',
-    '55':'WI','56':'WY'
-  };
-
-  // Reverse: abbreviation to FIPS
-  const AB_TO_FIPS = {};
-  for (const [fips, ab] of Object.entries(FIPS_TO_AB)) {
-    AB_TO_FIPS[ab] = fips;
-  }
-
-  // State abbreviation to full name (built from geography)
-  // Use stateAb field as primary source, then fill gaps from FIPS_TO_AB for
-  // states that only appear as cross-state MSA counties
+  // State abbreviation to full name (built from geography, gaps filled from shared constants)
   const AB_TO_NAME = {};
   for (const info of Object.values(geography)) {
     if (info.stateAb && !AB_TO_NAME[info.stateAb]) {
       AB_TO_NAME[info.stateAb] = info.state;
     }
   }
-  // Fill in any missing state names (e.g., RI only appears in cross-state MSAs)
-  const STATE_FULL_NAMES = {
-    'AL':'Alabama','AK':'Alaska','AZ':'Arizona','AR':'Arkansas','CA':'California',
-    'CO':'Colorado','CT':'Connecticut','DE':'Delaware','DC':'District of Columbia',
-    'FL':'Florida','GA':'Georgia','HI':'Hawaii','ID':'Idaho','IL':'Illinois',
-    'IN':'Indiana','IA':'Iowa','KS':'Kansas','KY':'Kentucky','LA':'Louisiana',
-    'ME':'Maine','MD':'Maryland','MA':'Massachusetts','MI':'Michigan','MN':'Minnesota',
-    'MS':'Mississippi','MO':'Missouri','MT':'Montana','NE':'Nebraska','NV':'Nevada',
-    'NH':'New Hampshire','NJ':'New Jersey','NM':'New Mexico','NY':'New York',
-    'NC':'North Carolina','ND':'North Dakota','OH':'Ohio','OK':'Oklahoma','OR':'Oregon',
-    'PA':'Pennsylvania','RI':'Rhode Island','SC':'South Carolina','SD':'South Dakota',
-    'TN':'Tennessee','TX':'Texas','UT':'Utah','VT':'Vermont','VA':'Virginia',
-    'WA':'Washington','WV':'West Virginia','WI':'Wisconsin','WY':'Wyoming'
-  };
-  for (const [ab, name] of Object.entries(STATE_FULL_NAMES)) {
+  for (const [ab, name] of Object.entries(STATE_NAMES)) {
     if (!AB_TO_NAME[ab]) AB_TO_NAME[ab] = name;
   }
 
-  // State FIPS to list of county count (from geography data, using FIPS prefix)
+  // State FIPS to county count (from geography data, using FIPS prefix)
   const STATE_COUNTY_COUNTS = {};
   {
     const seenByState = {};
@@ -80,27 +51,40 @@
     }
   }
 
-  // ---------- DOM refs ----------
+  // Pre-index: stateFips -> set of area codes for O(1) state lookups
+  const areasByState = {};
+  for (const [area, info] of Object.entries(geography)) {
+    for (const c of info.counties) {
+      const sf = c.fips.substring(0, STATE_FIPS_LENGTH);
+      if (!areasByState[sf]) areasByState[sf] = new Set();
+      areasByState[sf].add(area);
+    }
+  }
+
   let container;
   let svgEl;
   let mounted = $state(false);
-  let activeZoomState = null; // Track which state we're currently zoomed to
+  let activeZoomState = null;
 
-  // ---------- TopoJSON data ----------
   let topoData = null;
   let stateFeatures = [];
   let countyFeatures = [];
   let stateMesh = null;
   let nationMesh = null;
 
-  // ---------- D3 selections ----------
   let svg, stateGroup, countyGroup, borderGroup;
   let path;
   let zoom;
 
-  // ---------- Lifecycle ----------
+  function tooltipPosition(event, containerRect) {
+    let x = event.clientX - containerRect.left + 12;
+    let y = event.clientY - containerRect.top - 8;
+    if (x + TOOLTIP_WIDTH > containerRect.width) x = event.clientX - containerRect.left - (TOOLTIP_WIDTH + 10);
+    if (y + TOOLTIP_HEIGHT > containerRect.height) y = event.clientY - containerRect.top - TOOLTIP_HEIGHT;
+    return { x, y };
+  }
+
   onMount(async () => {
-    // Load TopoJSON
     const resp = await fetch(`${base}/data/us-counties.json`);
     topoData = await resp.json();
 
@@ -109,16 +93,13 @@
     stateMesh = topojson.mesh(topoData, topoData.objects.states, (a, b) => a !== b);
     nationMesh = topojson.mesh(topoData, topoData.objects.nation);
 
-    // Pre-projected Albers: identity projection
     path = d3.geoPath();
 
-    // Set up SVG structure
     svg = d3.select(svgEl);
     stateGroup = svg.append('g').attr('class', 'state-group');
     countyGroup = svg.append('g').attr('class', 'county-group').style('display', 'none');
     borderGroup = svg.append('g').attr('class', 'border-group');
 
-    // Draw state borders + nation border (always visible)
     borderGroup.append('path')
       .datum(stateMesh)
       .attr('class', 'state-border')
@@ -129,7 +110,6 @@
       .attr('class', 'nation-border')
       .attr('d', path);
 
-    // Draw states
     stateGroup.selectAll('path')
       .data(stateFeatures)
       .join('path')
@@ -139,7 +119,6 @@
       .on('mouseleave', handleHoverLeave)
       .on('click', handleStateClick);
 
-    // Draw counties (initially hidden)
     countyGroup.selectAll('path')
       .data(countyFeatures)
       .join('path')
@@ -149,15 +128,11 @@
       .on('mouseleave', handleHoverLeave)
       .on('click', handleCountyClick);
 
-    // Set up zoom behavior (disabled by default)
     zoom = d3.zoom()
-      .scaleExtent([0.5, 20])
+      .scaleExtent([ZOOM_MIN, ZOOM_MAX])
       .filter((event) => {
-        // Allow programmatic zooms (no sourceEvent) and drag events always
         if (!event.sourceEvent) return true;
-        // Allow wheel zoom only with Ctrl/Meta key to prevent accidental scroll-zoom
         if (event.type === 'wheel') return event.ctrlKey || event.metaKey;
-        // Allow all other events (mousedown for drag, touchstart, dblclick)
         return true;
       })
       .on('zoom', (event) => {
@@ -169,10 +144,8 @@
     mounted = true;
   });
 
-  // ---------- Color computation ----------
-  // Check if an area has any county in the given state (by FIPS prefix)
-  function areaHasCountyInState(info, stateFips) {
-    return info.counties.some(c => c.fips.substring(0, STATE_FIPS_LENGTH) === stateFips);
+  function getAreasInState(stateFips) {
+    return areasByState[stateFips] || new Set();
   }
 
   function getStateFillColor(stateFips, colorBy, occupation) {
@@ -180,15 +153,13 @@
     if (!ab) return NO_DATA_COLOR;
 
     if (occupation) {
-      // Compute per-state average from wageIndex for this occupation
       const socData = wageIndex[occupation.soc];
       if (!socData) return NO_DATA_COLOR;
 
-      // Find all areas touching this state and compute average
       let sum = 0;
       let count = 0;
-      for (const [area, info] of Object.entries(geography)) {
-        if (areaHasCountyInState(info, stateFips) && socData[area]) {
+      for (const area of getAreasInState(stateFips)) {
+        if (socData[area]) {
           const val = socData[area][colorBy];
           if (val != null) { sum += val; count++; }
         }
@@ -196,7 +167,6 @@
       if (count === 0) return NO_DATA_COLOR;
       return currentScale ? currentScale(sum / count) : NO_DATA_COLOR;
     } else {
-      // Aggregate mode
       const stateAgg = aggregate.states[ab];
       if (!stateAgg || stateAgg[colorBy] == null) return NO_DATA_COLOR;
       return currentScale ? currentScale(stateAgg[colorBy]) : NO_DATA_COLOR;
@@ -204,7 +174,6 @@
   }
 
   function getCountyFillColor(countyFips, colorBy, occupation, currentStateFips) {
-    // Dim counties outside the selected state
     const countyStateFips = countyFips.substring(0, STATE_FIPS_LENGTH);
     if (currentStateFips && countyStateFips !== currentStateFips) {
       return DIMMED_COLOR;
@@ -226,45 +195,40 @@
     }
   }
 
-  // ---------- Color scale ----------
   let currentScale = null;
 
   function computeColorScale(colorBy, occupation, currentStateFips) {
     let values = [];
 
     if (currentStateFips) {
-      // County view: only values from counties within the selected state
       const stateAb = FIPS_TO_AB[currentStateFips];
       if (!stateAb) return null;
 
       if (occupation) {
         const socData = wageIndex[occupation.soc];
         if (socData) {
-          for (const [area, info] of Object.entries(geography)) {
-            if (areaHasCountyInState(info, currentStateFips) && socData[area]) {
+          for (const area of getAreasInState(currentStateFips)) {
+            if (socData[area]) {
               const val = socData[area][colorBy];
               if (val != null) values.push(val);
             }
           }
         }
       } else {
-        for (const [area, info] of Object.entries(geography)) {
-          if (areaHasCountyInState(info, currentStateFips)) {
-            const areaAgg = aggregate.areas[area];
-            if (areaAgg && areaAgg[colorBy] != null) values.push(areaAgg[colorBy]);
-          }
+        for (const area of getAreasInState(currentStateFips)) {
+          const areaAgg = aggregate.areas[area];
+          if (areaAgg && areaAgg[colorBy] != null) values.push(areaAgg[colorBy]);
         }
       }
     } else {
-      // State view: values from state-level averages
       if (occupation) {
         const socData = wageIndex[occupation.soc];
         if (socData) {
-          for (const [sf, ab] of Object.entries(FIPS_TO_AB)) {
+          for (const sf of Object.keys(FIPS_TO_AB)) {
             let sum = 0;
             let count = 0;
-            for (const [area, info] of Object.entries(geography)) {
-              if (areaHasCountyInState(info, sf) && socData[area]) {
+            for (const area of getAreasInState(sf)) {
+              if (socData[area]) {
                 const val = socData[area][colorBy];
                 if (val != null) { sum += val; count++; }
               }
@@ -284,7 +248,6 @@
     return createColorScale(domain);
   }
 
-  // ---------- State wage data for tooltip ----------
   function getStateWageData(stateFips) {
     const ab = FIPS_TO_AB[stateFips];
     if (!ab) return null;
@@ -295,8 +258,8 @@
       if (!socData) return null;
       let sums = { l1: 0, l2: 0, l3: 0, l4: 0, avg: 0 };
       let count = 0;
-      for (const [area, info] of Object.entries(geography)) {
-        if (areaHasCountyInState(info, stateFips) && socData[area]) {
+      for (const area of getAreasInState(stateFips)) {
+        if (socData[area]) {
           for (const k of ['l1', 'l2', 'l3', 'l4', 'avg']) {
             sums[k] += socData[area][k] || 0;
           }
@@ -316,7 +279,6 @@
     }
   }
 
-  // ---------- Event handlers ----------
   function handleStateHover(event, d) {
     if (!onTooltip) return;
     const stateFips = d.id;
@@ -331,11 +293,7 @@
     }
 
     const rect = container.getBoundingClientRect();
-    let x = event.clientX - rect.left + 12;
-    let y = event.clientY - rect.top - 8;
-    // Flip if too close to edges
-    if (x + 200 > rect.width) x = event.clientX - rect.left - 210;
-    if (y + 180 > rect.height) y = event.clientY - rect.top - 180;
+    const pos = tooltipPosition(event, rect);
 
     onTooltip({
       name,
@@ -347,7 +305,7 @@
       avg: wages.avg,
       meta: 'State average',
       hint: 'Click to view counties',
-    }, x, y);
+    }, pos.x, pos.y);
   }
 
   function handleCountyHover(event, d) {
@@ -355,13 +313,11 @@
     const countyFips = d.id;
     const countyStateFips = countyFips.substring(0, STATE_FIPS_LENGTH);
 
-    // Only show tooltip for counties in the current state
     if (mapState.currentState && countyStateFips !== mapState.currentState) return;
 
     const area = fipsToArea[countyFips];
     const occupation = filters.occupation;
 
-    // Find county name from geography
     let countyName = d.properties?.name || 'Unknown County';
     let msaName = '';
     let stateName = '';
@@ -372,7 +328,6 @@
       const county = geography[area].counties.find(c => c.fips === countyFips);
       if (county) countyName = county.name;
     } else {
-      // Try to find county in any area
       const stateAb = FIPS_TO_AB[countyStateFips];
       stateName = AB_TO_NAME[stateAb] || '';
     }
@@ -386,18 +341,14 @@
     }
 
     const rect = container.getBoundingClientRect();
-    let x = event.clientX - rect.left + 12;
-    let y = event.clientY - rect.top - 8;
-    if (x + 200 > rect.width) x = event.clientX - rect.left - 210;
-    if (y + 180 > rect.height) y = event.clientY - rect.top - 180;
+    const pos = tooltipPosition(event, rect);
 
     if (!wages) {
-      // Show a basic "no data" tooltip for unmapped counties
       onTooltip({
         name: countyName,
         sub: stateName,
         hint: 'No wage data available',
-      }, x, y);
+      }, pos.x, pos.y);
       return;
     }
 
@@ -405,7 +356,6 @@
     let hint = '';
     if (occupation) {
       meta = occupation.soc + ' \u00b7 Zone ' + occupation.jobZone + ' \u00b7 ' + occupation.education;
-      hint = '';
     }
 
     onTooltip({
@@ -418,7 +368,7 @@
       avg: wages.avg,
       meta,
       hint,
-    }, x, y);
+    }, pos.x, pos.y);
   }
 
   function handleHoverLeave() {
@@ -440,7 +390,6 @@
     }
   }
 
-  // ---------- Zoom management ----------
   export function zoomToState(fips) {
     if (!svg || !topoData) return;
 
@@ -460,15 +409,12 @@
   function applyStateZoom(stateFips) {
     if (!svg || !path) return;
 
-    // Show county view, hide state view
     stateGroup.style('display', 'none');
     countyGroup.style('display', '');
 
-    // Only animate zoom if we're zooming to a different state
     if (activeZoomState === stateFips) return;
     activeZoomState = stateFips;
 
-    // Find the state feature
     const stateFeature = stateFeatures.find(f => f.id === stateFips);
     if (!stateFeature) return;
 
@@ -478,29 +424,18 @@
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
 
-    // viewBox dimensions — must match the SVG viewBox attribute
-    const vbW = 1100;
-    const vbH = 670;
-    const vbX = -60;
-    const vbY = -30;
+    const scale = STATE_FILL_RATIO / Math.max(dx / VIEWBOX.w, dy / VIEWBOX.h);
 
-    // Scale so state fills ~50% of viewport
-    const STATE_FILL_RATIO = 0.5;
-    const scale = STATE_FILL_RATIO / Math.max(dx / vbW, dy / vbH);
+    const viewCx = VIEWBOX.x + VIEWBOX.w / 2;
+    const viewCy = VIEWBOX.y + VIEWBOX.h / 2;
 
-    // Center of viewBox
-    const viewCx = vbX + vbW / 2;
-    const viewCy = vbY + vbH / 2;
-
-    // Translate so state center maps to viewBox center
     const translate = [viewCx - scale * cx, viewCy - scale * cy];
 
     const transform = d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale);
 
-    // Enable zoom and apply transform with smooth interpolation
     svg.call(zoom);
     svg.transition()
-      .duration(750)
+      .duration(ZOOM_TRANSITION_MS)
       .call(zoom.transform, transform);
   }
 
@@ -509,47 +444,37 @@
 
     activeZoomState = null;
 
-    // Smoothly transition back to identity transform before switching views
     if (zoom) {
       svg.call(zoom);
       svg.transition()
-        .duration(750)
+        .duration(ZOOM_TRANSITION_MS)
         .call(zoom.transform, d3.zoomIdentity)
         .on('end', () => {
-          // Disable zoom after transition completes
           svg.on('.zoom', null);
         });
     }
 
-    // Show state view, hide county view
     stateGroup.style('display', '');
     countyGroup.style('display', 'none');
   }
 
-  // ---------- Reactive updates ----------
   $effect(() => {
     if (!mounted) return;
 
-    // Read tracked dependencies
     const colorBy = filters.colorBy;
     const occupation = filters.occupation;
     const currentStateFips = mapState.currentState;
 
-    // Recompute color scale (per-view normalization)
     currentScale = computeColorScale(colorBy, occupation, currentStateFips);
 
     if (currentStateFips) {
-      // County view
       applyStateZoom(currentStateFips);
 
-      // Color counties
       countyGroup.selectAll('path')
         .attr('fill', (d) => getCountyFillColor(d.id, colorBy, occupation, currentStateFips));
     } else {
-      // State view
       applyStateReset();
 
-      // Color states
       stateGroup.selectAll('path')
         .attr('fill', (d) => getStateFillColor(d.id, colorBy, occupation));
     }
@@ -557,7 +482,7 @@
 </script>
 
 <div class="map-container" bind:this={container}>
-  <svg bind:this={svgEl} viewBox="-60 -30 1100 670" preserveAspectRatio="xMidYMid meet"></svg>
+  <svg bind:this={svgEl} viewBox="{VIEWBOX.x} {VIEWBOX.y} {VIEWBOX.w} {VIEWBOX.h}" preserveAspectRatio="xMidYMid meet"></svg>
 </div>
 
 <style>

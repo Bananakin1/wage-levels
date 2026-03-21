@@ -2,6 +2,7 @@
   import FilterBar from '$lib/components/FilterBar.svelte';
   import USMap from '$lib/components/USMap.svelte';
   import Tooltip from '$lib/components/Tooltip.svelte';
+  import { EMBER } from '$lib/utils/colors.js';
   import { mapState } from '$lib/state.svelte.js';
 
   let { data } = $props();
@@ -39,7 +40,6 @@
       aggregate={data.aggregate}
       wageIndex={data.wageIndex}
       fipsToArea={data.fipsToArea}
-      occupations={data.occupations}
       onTooltip={handleTooltip}
     />
 
@@ -52,7 +52,7 @@
     <div class="legend">
       <span>Low</span>
       <div class="legend-bar">
-        {#each ["#1a1016","#2a1520","#451a28","#6e2030","#983828","#c05a20","#e08818","#f0b818"] as color}
+        {#each EMBER as color}
           <span style="background:{color}"></span>
         {/each}
       </div>
