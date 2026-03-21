@@ -13,15 +13,17 @@ The primary use case: an H-1B applicant (or employer, or immigration professiona
 | OFLC Prevailing Wages 2025-26 | flag.dol.gov/wage-data/wage-data-downloads | Public domain (17 U.S.C. 105) | ZIP containing CSVs |
 | O*NET Database 30.2 | onetcenter.org/database.html | CC-BY 4.0 | ZIP containing CSVs |
 | US Census TopoJSON | npmjs.com/package/us-atlas | Public domain | counties-albers-10m.json |
+| Census CBSA Delineation | census.gov/geographies/reference-files/time-series/demo/metro-micro/delineation-files.html | Public domain | Excel/CSV mapping CBSA codes to county FIPS |
 
 ### OFLC Files (already downloaded)
 
 Located at `data/raw/oflc/`:
 
-- **ALC_Export.csv** — wages by SOC code x Area code. Columns: `Area`, `SocCode`, `GeoLvl`, `Level1`-`Level4`, `Average`, `Label`. Wages in hourly USD. ~400K rows.
-- **Geography.csv** — Area code to county mapping. Columns: `Area`, `AreaName`, `StateAb`, `State`, `CountyTownName`. 3,275 rows mapping 530 areas to counties.
-- **oes_soc_occs.csv** — SOC code to title. Columns: `OES_SOCCODE`, `OES_SOCTITLE`.
-- **xwalk_plus.csv** — SOC to O*NET code crosswalk. Columns: `OES_SOCCODE`, `OES_SOCTITLE`, `TruncOnetCode`, `OnetCode`, `ONetTitle`. Many-to-one: multiple O*NET codes per SOC.
+- **ALC_Export.csv** — wages by SOC code x Area code. Columns: `Area`, `SocCode`, `GeoLvl`, `Level1`-`Level4`, `Average`, `Label`. ~449K rows. **Mixed units:** most rows are hourly USD, but rows with `Label = "Annual Wage"` (~7.3%) are in annual USD. Rows with `Label = "High Wage"` or `"No Leveled Wage"` have empty Level1-4 (only Average populated).
+- **EDC_Export.csv** — education-based wage estimates, same schema as ALC_Export. **Intentionally excluded** — ALC contains the OES-survey wages used for H-1B prevailing wage determinations. EDC uses a different methodology.
+- **Geography.csv** — Area code to county mapping. Columns: `Area`, `AreaName`, `StateAb`, `State`, `CountyTownName`. 3,275 rows mapping 530 areas to counties. **No FIPS codes** — county-to-TopoJSON join requires the Census CBSA delineation file (see below).
+- **oes_soc_occs.csv** — SOC code to title and description. Columns: `soccode`, `Title`, `Description`. The Description field powers the type-ahead search.
+- **xwalk_plus.csv** — SOC to O*NET code crosswalk. Columns: `OES_SOCCODE`, `OES_SOCTITLE`, `TruncOnetCode`, `OnetCode`, `ONetTitle`. Many-to-one: multiple O*NET codes per SOC. For the O*NET link on county click, use the `.00` base code (e.g., `11-1011.00`), falling back to the first available code.
 
 ### O*NET Files (to download)
 
@@ -33,15 +35,47 @@ Located at `data/raw/onet/`:
 ### Data Join Strategy
 
 ```
-ALC_Export (Area, SocCode → L1-L4, Avg)
-  ← Geography (Area → counties, states)
-  ← oes_soc_occs (SocCode → title)
-  ← xwalk_plus (SocCode → OnetCode)
+ALC_Export (Area, SocCode → L1-L4, Avg, Label)
+  ← Geography (Area → AreaName, StateAb, CountyTownName)
+  ← CBSA Delineation (CBSA code → county FIPS)
+  ← oes_soc_occs (soccode → Title, Description)
+  ← xwalk_plus (OES_SOCCODE → OnetCode)
   ← O*NET Job Zones (OnetCode → jobZone)
   ← O*NET Education (OnetCode → education)
 ```
 
 Join key: **SOC code** (6-digit, format `XX-XXXX`). O*NET codes (format `XX-XXXX.XX`) are more granular — multiple O*NET specializations map to one SOC code. The crosswalk file `xwalk_plus.csv` provides the mapping.
+
+### County FIPS Mapping
+
+Geography.csv has county names but no FIPS codes. The TopoJSON file uses FIPS codes as county IDs. The pipeline needs an additional data source to bridge this gap:
+
+**Census CBSA Delineation File** — maps CBSA/MSA codes to county FIPS codes. Download from Census Bureau. The pipeline joins: `Geography.Area` (OFLC area code, which corresponds to CBSA codes) → CBSA delineation → county FIPS. This produces the `{fips, name}` pairs needed for `geography.json`.
+
+Edge cases: Virginia independent cities (e.g., "Radford city") have their own FIPS codes distinct from surrounding counties. Louisiana uses parishes, Alaska uses boroughs. The CBSA file handles all of these natively.
+
+### Wage Unit Handling
+
+ALC_Export contains mixed units indicated by the `Label` column:
+
+| Label | Meaning | Level1-4 | Average | Pipeline action |
+|-------|---------|----------|---------|----------------|
+| `""` (empty) | Hourly wages | Present | Present | Store as-is |
+| `"Annual Wage"` | Annual wages | Present | Present | Divide by 2080 to convert to hourly |
+| `"High Wage"` | Only average available | Empty | Present | Store levels as `null`, average only |
+| `"No Leveled Wage"` | Insufficient data | Empty | Present | Store levels as `null`, average only |
+
+All values in `wages.json` are stored in **hourly USD as integer cents**. Frontend converts to annual by multiplying by 2080 when the annual toggle is active.
+
+When "Color by" is set to a specific level (I-IV) and the selected occupation has `null` levels for a county, that county is shown in a neutral gray (#1a1a2a) to indicate "no data for this level."
+
+### GeoLvl Handling
+
+ALC_Export rows have a `GeoLvl` column (values 1-4) indicating the data estimation tier. When multiple GeoLvl rows exist for the same Area+SocCode pair, the pipeline uses the **lowest GeoLvl** (most precise estimate). If GeoLvl 1 exists, use it; otherwise fall back to 2, then 3, then 4.
+
+### Territory Handling
+
+Geography.csv includes Puerto Rico (PR) and Guam (GU). The `counties-albers-10m.json` TopoJSON uses an Albers USA projection that only includes the 50 states + DC. **Territories are out of scope** — the pipeline filters them out and logs a count of discarded rows.
 
 ### Geographic Granularity
 
@@ -64,10 +98,10 @@ A single Node.js script (`pipeline/build.js`) that:
 
 1. Reads all CSVs from `data/raw/`
 2. Joins on SOC code and Area code
-3. Computes state-level aggregates (average of county wages per state)
+3. Computes state-level aggregates: **simple mean** of all MSA/area wages within each state (each area counted once, not weighted by county count). "Balance of State" nonmetro areas are included.
 4. Outputs to `static/data/`:
    - **wages.json** — compact array: `{soc, area, l1, l2, l3, l4, avg}` (wages stored as integer cents to reduce size)
-   - **occupations.json** — lookup: `{soc, title, onetCode, jobZone, education}`
+   - **occupations.json** — lookup: `{soc, title, description, onetCode, jobZone, education}`
    - **geography.json** — lookup: `{area, name, stateAb, state, counties: [{fips, name}]}`
    - **aggregate.json** — pre-computed cross-occupation average per area for the landing view (state-level + area-level)
 
@@ -123,7 +157,7 @@ Full-width stacked layout:
 
 | Control | Type | Options |
 |---------|------|---------|
-| Occupation search | Text input with type-ahead | SOC code or job title |
+| Occupation search | Text input with type-ahead | SOC code, job title, or keyword from description |
 | State | Custom dropdown | All 50 states + DC, or "All states" |
 | Job Zone | Custom dropdown | Zone 1-5, or "All Zones" |
 | Education | Custom dropdown | High school through Doctoral, or "All levels" |
@@ -160,6 +194,12 @@ All dropdowns are custom-styled (not native `<select>`) to match the dark theme.
 ```
 
 Low wages = dark/near-invisible. High wages = warm amber/gold, clearly visible against the dark background.
+
+**Color scale domain:** Computed per-occupation. When an occupation is selected, the domain is `[min, max]` of the selected wage metric across all areas for that occupation. This ensures the full palette range is used regardless of absolute wage values. In aggregate mode (no occupation), the domain spans the full dataset range.
+
+**No-data counties:** Shown in neutral gray (#1a1a2a) when wage data is unavailable for the selected occupation + level combination.
+
+**Hourly/Annual conversion factor:** 2,080 hours/year (40 hrs/week x 52 weeks). This is the standard DOL conversion.
 
 ### Tooltip Content
 
