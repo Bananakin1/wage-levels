@@ -85,14 +85,19 @@ let totalCounties = 0;
 for (const cs of Object.values(allCountiesByState)) totalCounties += cs.length;
 console.log(`  All US counties loaded: ${totalCounties}`);
 
-// Build set of all FIPS covered by CBSA metro areas
+// Build set of OFLC area codes (only CBSAs the wage data actually references)
+const oflcAreaCodes = new Set(geoRows.map(r => r.Area?.trim()).filter(Boolean));
+
+// Build set of FIPS covered by CBSAs that have OFLC wage data.
+// Micropolitan CBSAs without wage data should fall through to nonmetro assignment.
 const coveredFips = new Set();
-for (const counties of Object.values(fipsMap)) {
+for (const [cbsa, counties] of Object.entries(fipsMap)) {
+  if (!oflcAreaCodes.has(cbsa)) continue;   // skip CBSAs absent from OFLC
   for (const c of counties) {
     coveredFips.add(c.fips);
   }
 }
-console.log(`  Counties covered by CBSA: ${coveredFips.size}`);
+console.log(`  Counties covered by CBSA with OFLC data: ${coveredFips.size}`);
 
 // ── 3. Build nonmetro map ──────────────────────────────────────
 console.log('\nBuilding nonmetro map...');

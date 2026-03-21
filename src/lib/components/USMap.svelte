@@ -456,7 +456,7 @@
     const VIEWBOX_Y = -20;
     const [[x0, y0], [x1, y1]] = path.bounds(stateFeature);
 
-    const PADDING = 0.80;
+    const PADDING = 0.55;
     const dx = x1 - x0;
     const dy = y1 - y0;
     const x = (x0 + x1) / 2;
