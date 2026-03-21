@@ -48,11 +48,18 @@ Join key: **SOC code** (6-digit, format `XX-XXXX`). O*NET codes (format `XX-XXXX
 
 ### County FIPS Mapping
 
-Geography.csv has county names but no FIPS codes. The TopoJSON file uses FIPS codes as county IDs. The pipeline needs an additional data source to bridge this gap:
+Geography.csv has county names but no FIPS codes. The TopoJSON file uses FIPS codes as county IDs. The pipeline uses two sources to bridge this gap:
 
-**Census CBSA Delineation File** — maps CBSA/MSA codes to county FIPS codes. Download from Census Bureau. The pipeline joins: `Geography.Area` (OFLC area code, which corresponds to CBSA codes) → CBSA delineation → county FIPS. This produces the `{fips, name}` pairs needed for `geography.json`.
+1. **Census CBSA Delineation File** — maps CBSA/MSA codes to county FIPS codes for metro areas.
+2. **Census National County File** (`national_county2020.txt`) — complete list of all U.S. counties with FIPS codes, used to resolve nonmetro county names to FIPS via name matching.
 
-Edge cases: Virginia independent cities (e.g., "Radford city") have their own FIPS codes distinct from surrounding counties. Louisiana uses parishes, Alaska uses boroughs. The CBSA file handles all of these natively.
+**Metro areas:** `Geography.Area` codes that match CBSA codes get county FIPS directly from the delineation file.
+
+**Nonmetro areas:** Geography.csv already contains the correct county-to-nonmetro-area assignments (e.g., "Southwest Montana nonmetropolitan area" → Beaverhead County, Deer Lodge County, etc.). The pipeline matches these county names against the national county file to get FIPS codes. Name normalization handles suffixes (County, Parish, Borough, Census Area, etc.).
+
+**Cross-state MSAs:** Areas that span multiple states (e.g., NY-NJ, OH-KY-IN) are discoverable under ALL states that have counties in them, not just one primary state. The frontend uses county FIPS prefixes to determine which areas belong to a given state.
+
+Edge cases: Virginia independent cities have their own FIPS codes. Louisiana uses parishes, Alaska uses boroughs. Connecticut replaced counties with planning regions in 2022; the pipeline maps planning region names to old county FIPS codes used by the TopoJSON.
 
 ### Wage Unit Handling
 
@@ -98,7 +105,7 @@ A single Node.js script (`pipeline/build.js`) that:
 
 1. Reads all CSVs from `data/raw/`
 2. Joins on SOC code and Area code
-3. Computes state-level aggregates: **simple mean** of all MSA/area wages within each state (each area counted once, not weighted by county count). "Balance of State" nonmetro areas are included.
+3. Computes state-level aggregates: **simple mean** of all MSA/area wages within each state (each area counted once, not weighted by county count). "Balance of State" nonmetro areas are included. Cross-state MSAs contribute to ALL states they touch (via county FIPS prefix matching).
 4. Outputs to `static/data/`:
    - **wages.json** — compact array: `{soc, area, l1, l2, l3, l4, avg}` (wages stored as integer cents to reduce size)
    - **occupations.json** — lookup: `{soc, title, description, onetCode, jobZone, education}`
@@ -149,7 +156,7 @@ FilterBar changes → state.svelte.js updates → derived filtered data recomput
 ### Layout
 
 Full-width stacked layout:
-1. **Header** — title "Wage Explorer" + description with links to O*NET and OFLC sources
+1. **Header** — title "Wage Explorer" + description explaining: what the tool does (combines O*NET + OFLC data), what the four wage levels represent (percentiles), what "High Wage" means, how Job Zone and Education filters work, and the current data period (Jul 2025 through Jun 2026). Links to O*NET and OFLC sources.
 2. **Filter bar** — horizontal row of controls
 3. **Map** — fills remaining viewport height
 
@@ -180,8 +187,9 @@ All dropdowns are custom-styled (not native `<select>`) to match the dark theme.
 - Out-of-state counties dimmed to near-black
 - Hover county → tooltip shows county name, state, MSA, all 4 wage levels + average, SOC code, Job Zone, education
 - Click county (with occupation selected) → opens O*NET profile page in new tab (`https://www.onetonline.org/link/summary/{onetCode}`)
-- Drag to pan, scroll to zoom (D3 zoom behavior)
+- Drag to pan, Ctrl+scroll to zoom (D3 zoom behavior, wheel zoom requires Ctrl/Meta to prevent accidental scroll)
 - "All states" button returns to national view
+- SVG uses `position: absolute; inset: 0` to constrain to viewport height, preventing overflow on fullscreen displays
 
 **State dropdown integration:** Selecting a state from the dropdown is equivalent to clicking it on the map. Resetting to "All states" returns to national view.
 
@@ -195,7 +203,7 @@ All dropdowns are custom-styled (not native `<select>`) to match the dark theme.
 
 Low wages = dark/near-invisible. High wages = warm amber/gold, clearly visible against the dark background.
 
-**Color scale domain:** Computed per-occupation. When an occupation is selected, the domain is `[min, max]` of the selected wage metric across all areas for that occupation. This ensures the full palette range is used regardless of absolute wage values. In aggregate mode (no occupation), the domain spans the full dataset range.
+**Color scale domain:** Per-view normalization. In state view, the domain is `[min, max]` of state-level values being displayed. In county view (drilled into a state), the domain is `[min, max]` of only the areas within that state. This maximizes visual contrast at every zoom level — e.g., California's internal wage variation spans the full palette even though its absolute range is narrow nationally.
 
 **No-data counties:** Shown in neutral gray (#1a1a2a) when wage data is unavailable for the selected occupation + level combination.
 
@@ -215,6 +223,8 @@ Low wages = dark/near-invisible. High wages = warm amber/gold, clearly visible a
 - State name + MSA name
 - Levels I-IV + Average (hourly or annual per toggle)
 - SOC code + Job Zone + Education (when occupation selected)
+- **High Wage / No Leveled Wage flag:** When an occupation+area has null levels (Label = "High Wage" or "No Leveled Wage"), the tooltip shows an amber flag with explanation instead of individual level rows. Only the average is displayed.
+- **No data tooltip:** Counties with no FIPS mapping show county name + state with "No wage data available" hint.
 
 ### Typography
 
