@@ -29,6 +29,9 @@ mkdir -p data/raw/cbsa
 # Note: Census hosts this as .xlsx (not .xls) as of 2023
 curl -L "https://www2.census.gov/programs-surveys/metro-micro/geographies/reference-files/2023/delineation-files/list1_2023.xlsx" -o data/raw/cbsa/cbsa_delineation.xlsx
 
+echo "Downloading Census national county FIPS list (2020)..."
+curl -L "https://www2.census.gov/geo/docs/reference/codes2020/national_county2020.txt" -o data/raw/cbsa/national_county2020.txt
+
 echo "Done. Place OFLC CSVs manually in data/raw/oflc/"
 echo "Expected files:"
 echo "  data/raw/oflc/ALC_Export.csv"
