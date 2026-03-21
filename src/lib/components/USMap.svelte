@@ -66,6 +66,7 @@
   let container;
   let svgEl;
   let mounted = $state(false);
+  let activeZoomState = null; // Track which state we're currently zoomed to
 
   // ---------- TopoJSON data ----------
   let topoData = null;
@@ -390,27 +391,30 @@
   function applyStateZoom(stateFips) {
     if (!svg || !path) return;
 
-    // Find the state feature
-    const stateFeature = stateFeatures.find(f => f.id === stateFips);
-    if (!stateFeature) return;
-
     // Show county view, hide state view
     stateGroup.style('display', 'none');
     countyGroup.style('display', '');
 
-    // Compute bounds for zoom
+    // Only animate zoom if we're zooming to a different state
+    if (activeZoomState === stateFips) return;
+    activeZoomState = stateFips;
+
+    // Find the state feature
+    const stateFeature = stateFeatures.find(f => f.id === stateFips);
+    if (!stateFeature) return;
+
+    // Compute bounds for zoom — use viewBox dimensions since path uses pre-projected coords
+    const VIEWBOX_WIDTH = 975;
+    const VIEWBOX_HEIGHT = 610;
     const [[x0, y0], [x1, y1]] = path.bounds(stateFeature);
-    const svgNode = svgEl;
-    const width = svgNode.clientWidth || 975;
-    const height = svgNode.clientHeight || 610;
 
     const PADDING = 0.85;
     const dx = x1 - x0;
     const dy = y1 - y0;
     const x = (x0 + x1) / 2;
     const y = (y0 + y1) / 2;
-    const scale = PADDING / Math.max(dx / width, dy / height);
-    const translate = [width / 2 - scale * x, height / 2 - scale * y];
+    const scale = PADDING / Math.max(dx / VIEWBOX_WIDTH, dy / VIEWBOX_HEIGHT);
+    const translate = [VIEWBOX_WIDTH / 2 - scale * x, VIEWBOX_HEIGHT / 2 - scale * y];
 
     const transform = d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale);
 
@@ -423,6 +427,8 @@
 
   function applyStateReset() {
     if (!svg) return;
+
+    activeZoomState = null;
 
     // Disable zoom
     svg.on('.zoom', null);
