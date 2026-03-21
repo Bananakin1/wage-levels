@@ -198,20 +198,53 @@
   // ---------- Color scale ----------
   let currentScale = null;
 
-  function computeColorScale(colorBy, occupation) {
+  function computeColorScale(colorBy, occupation, currentStateFips) {
     let values = [];
 
-    if (occupation) {
-      const socData = wageIndex[occupation.soc];
-      if (socData) {
-        for (const w of Object.values(socData)) {
-          if (w[colorBy] != null) values.push(w[colorBy]);
+    if (currentStateFips) {
+      // County view: only values from counties within the selected state
+      const stateAb = FIPS_TO_AB[currentStateFips];
+      if (!stateAb) return null;
+
+      if (occupation) {
+        const socData = wageIndex[occupation.soc];
+        if (socData) {
+          for (const [area, info] of Object.entries(geography)) {
+            if (info.stateAb === stateAb && socData[area]) {
+              const val = socData[area][colorBy];
+              if (val != null) values.push(val);
+            }
+          }
+        }
+      } else {
+        for (const [area, info] of Object.entries(geography)) {
+          if (info.stateAb === stateAb) {
+            const areaAgg = aggregate.areas[area];
+            if (areaAgg && areaAgg[colorBy] != null) values.push(areaAgg[colorBy]);
+          }
         }
       }
     } else {
-      // Aggregate: use areas for full range
-      for (const w of Object.values(aggregate.areas)) {
-        if (w[colorBy] != null) values.push(w[colorBy]);
+      // State view: values from state-level averages
+      if (occupation) {
+        const socData = wageIndex[occupation.soc];
+        if (socData) {
+          for (const ab of Object.values(FIPS_TO_AB)) {
+            let sum = 0;
+            let count = 0;
+            for (const [area, info] of Object.entries(geography)) {
+              if (info.stateAb === ab && socData[area]) {
+                const val = socData[area][colorBy];
+                if (val != null) { sum += val; count++; }
+              }
+            }
+            if (count > 0) values.push(sum / count);
+          }
+        }
+      } else {
+        for (const w of Object.values(aggregate.states)) {
+          if (w[colorBy] != null) values.push(w[colorBy]);
+        }
       }
     }
 
@@ -452,8 +485,8 @@
     const occupation = filters.occupation;
     const currentStateFips = mapState.currentState;
 
-    // Recompute color scale
-    currentScale = computeColorScale(colorBy, occupation);
+    // Recompute color scale (per-view normalization)
+    currentScale = computeColorScale(colorBy, occupation, currentStateFips);
 
     if (currentStateFips) {
       // County view
