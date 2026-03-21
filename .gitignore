@@ -4,5 +4,6 @@ build/
 .svelte-kit/
 .superpowers/
 .playwright-mcp/
+CLAUDE.md
 *.png
 !static/favicon.png
