@@ -478,14 +478,14 @@
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
 
-    // viewBox dimensions
-    const vbW = 1060;
-    const vbH = 700;
-    const vbX = -50;
-    const vbY = -20;
+    // viewBox dimensions — must match the SVG viewBox attribute
+    const vbW = 1100;
+    const vbH = 670;
+    const vbX = -60;
+    const vbY = -30;
 
-    // Scale so state fills ~40% of viewport (generous padding around edges)
-    const STATE_FILL_RATIO = 0.4;
+    // Scale so state fills ~50% of viewport
+    const STATE_FILL_RATIO = 0.5;
     const scale = STATE_FILL_RATIO / Math.max(dx / vbW, dy / vbH);
 
     // Center of viewBox
@@ -557,20 +557,23 @@
 </script>
 
 <div class="map-container" bind:this={container}>
-  <svg bind:this={svgEl} viewBox="-50 -20 1060 700" preserveAspectRatio="xMidYMid meet"></svg>
+  <svg bind:this={svgEl} viewBox="-60 -30 1100 670" preserveAspectRatio="xMidYMid meet"></svg>
 </div>
 
 <style>
   .map-container {
-    flex: 1;
-    position: relative;
+    position: absolute;
+    inset: 0;
     overflow: hidden;
     background: #08080e;
   }
 
   svg {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
+    display: block;
     cursor: grab;
   }
 
