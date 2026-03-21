@@ -10,7 +10,7 @@ const config = {
       precompress: true
     }),
     paths: {
-      base: process.env.NODE_ENV === 'production' ? '/h1b' : ''
+      base: process.env.NODE_ENV === 'production' ? '/wage-levels' : ''
     }
   }
 };
