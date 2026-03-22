@@ -9,3 +9,10 @@ export function formatWage(cents, isAnnual) {
   if (isAnnual) dollars *= HOURS_PER_YEAR;
   return '$' + fmtDollar(dollars);
 }
+
+const fmtComma = format(',');
+
+export function formatEmployment(count) {
+  if (count == null) return '—';
+  return fmtComma(count);
+}

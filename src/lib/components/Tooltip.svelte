@@ -1,5 +1,5 @@
 <script>
-  import { formatWage } from '$lib/utils/format.js';
+  import { formatWage, formatEmployment } from '$lib/utils/format.js';
   import { filters } from '$lib/state.svelte.js';
 
   let { visible = false, x = 0, y = 0, data = null } = $props();
@@ -23,6 +23,13 @@
         <div class="tt-div"></div>
       {/if}
       <div class="tt-row tt-avg"><span class="tt-label">Average</span><span class="tt-val">{formatWage(data.avg, filters.isAnnual)}</span></div>
+      {#if data.emp != null}
+        <div class="tt-div"></div>
+        <div class="tt-row"><span class="tt-label">Employment</span><span class="tt-val">{formatEmployment(data.emp)}</span></div>
+      {:else if data.empSuppressed}
+        <div class="tt-div"></div>
+        <div class="tt-flag-emp">No employment data available</div>
+      {/if}
     {/if}
     {#if data.meta}<div class="tt-meta">{data.meta}</div>{/if}
     {#if data.hint}<div class="tt-hint">{data.hint}</div>{/if}
@@ -45,5 +52,6 @@
   .tt-meta { font-size: 10px; color: #5858a0; margin-top: 6px; font-family: 'IBM Plex Mono', monospace; }
   .tt-hint { font-size: 10px; color: #5090c0; margin-top: 4px; font-style: italic; }
   .tt-flag { font-size: 10px; color: #c08040; font-weight: 500; margin-bottom: 2px; }
+  .tt-flag-emp { font-size: 10px; color: #c0a030; font-style: italic; }
   .tt-flag-desc { font-size: 9px; color: #7070a0; line-height: 1.4; margin-bottom: 2px; max-width: 200px; }
 </style>

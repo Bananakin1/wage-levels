@@ -24,7 +24,7 @@
   <header class="header">
     <h1>Wage Explorer</h1>
     <p>
-      Combines <a href="https://www.onetcenter.org" target="_blank" rel="noopener">O*NET</a> occupation data with <a href="https://flag.dol.gov" target="_blank" rel="noopener">OFLC</a> prevailing wages so you can explore wage levels by occupation at the county level across the U.S., all in one place. Instead of cross referencing both websites manually, search for an occupation and instantly see how wages vary geographically. Wages are split into four levels based on pay distribution percentiles: Level I (~17th percentile, entry level), Level II (~34th), Level III (~50th), Level IV (~67th). Use "Color by" to pick which level colors the map. Some occupations are flagged "High Wage" by the DOL, meaning only an average is available and individual levels cannot be determined. You can also filter by Job Zone (1 = little or no prep, 5 = extensive education and experience) or by Education level to narrow your occupation search. Data covers Jul 2025 through Jun 2026, sourced from the May 2024 BLS OEWS survey.
+      Combines <a href="https://www.onetcenter.org" target="_blank" rel="noopener">O*NET</a> occupation data with <a href="https://flag.dol.gov" target="_blank" rel="noopener">OFLC</a> prevailing wages so you can explore wage levels by occupation across U.S. metro and nonmetro areas, all in one place. Instead of cross referencing both websites manually, search for an occupation and instantly see how wages vary geographically. Wages are split into four levels based on pay distribution percentiles: Level I (~17th percentile, entry level), Level II (~34th), Level III (~50th), Level IV (~67th). Use "Color by" to pick which level colors the map. Some occupations are flagged "High Wage" by the DOL, meaning only an average is available and individual levels cannot be determined. You can also filter by Job Zone (1 = little or no prep, 5 = extensive education and experience) or by Education level to narrow your occupation search. Data covers Jul 2025 through Jun 2026, sourced from the May 2024 BLS OEWS survey.
     </p>
     <p class="attribution">
       O*NET data from U.S. Department of Labor, Employment and Training Administration, licensed under CC BY 4.0.
@@ -39,7 +39,8 @@
       geography={data.geography}
       aggregate={data.aggregate}
       wageIndex={data.wageIndex}
-      fipsToArea={data.fipsToArea}
+      employmentIndex={data.employmentIndex}
+      areaEmploymentTotals={data.areaEmploymentTotals}
       onTooltip={handleTooltip}
     />
 

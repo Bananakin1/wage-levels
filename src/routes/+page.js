@@ -4,23 +4,15 @@ export const prerender = true;
 export const ssr = false;
 
 export async function load({ fetch }) {
-  const [wages, occupations, geography, aggregate] = await Promise.all([
+  const [wages, occupations, geography, aggregate, employment] = await Promise.all([
     fetch(`${base}/data/wages.json`).then(r => r.json()),
     fetch(`${base}/data/occupations.json`).then(r => r.json()),
     fetch(`${base}/data/geography.json`).then(r => r.json()),
     fetch(`${base}/data/aggregate.json`).then(r => r.json()),
+    fetch(`${base}/data/employment.json`).then(r => r.json()),
   ]);
 
-  // Build county FIPS → area lookup for choropleth
-  const fipsToArea = {};
-  for (const [area, info] of Object.entries(geography)) {
-    for (const county of info.counties) {
-      fipsToArea[county.fips] = area;
-    }
-  }
-
   // Build wages index: soc → { area → wage object }
-  // wages shape: { area: { soc: { l1, l2, l3, l4, avg } } }
   const wageIndex = {};
   for (const [area, socWages] of Object.entries(wages)) {
     for (const [soc, w] of Object.entries(socWages)) {
@@ -29,5 +21,19 @@ export async function load({ fetch }) {
     }
   }
 
-  return { occupations, geography, aggregate, fipsToArea, wageIndex };
+  // Build employment index: soc → { area → count }
+  // Also compute per-area totals for aggregate view
+  const employmentIndex = {};
+  const areaEmploymentTotals = {};
+  for (const [area, socEmp] of Object.entries(employment)) {
+    let areaTotal = 0;
+    for (const [soc, emp] of Object.entries(socEmp)) {
+      if (!employmentIndex[soc]) employmentIndex[soc] = {};
+      employmentIndex[soc][area] = emp;
+      areaTotal += emp;
+    }
+    areaEmploymentTotals[area] = areaTotal;
+  }
+
+  return { occupations, geography, aggregate, wageIndex, employmentIndex, areaEmploymentTotals };
 }

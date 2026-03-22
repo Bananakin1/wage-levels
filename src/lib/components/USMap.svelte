@@ -4,14 +4,15 @@
   import * as d3 from 'd3';
   import * as topojson from 'topojson-client';
   import { createColorScale, NO_DATA_COLOR } from '$lib/utils/colors.js';
-  import { FIPS_TO_AB, AB_TO_FIPS, STATE_NAMES, STATE_FIPS_LENGTH } from '$lib/utils/geo.js';
+  import { FIPS_TO_AB, STATE_NAMES, STATE_FIPS_LENGTH } from '$lib/utils/geo.js';
   import { filters, mapState } from '$lib/state.svelte.js';
 
   let {
     geography,
     aggregate,
     wageIndex,
-    fipsToArea,
+    employmentIndex,
+    areaEmploymentTotals,
     onTooltip,
   } = $props();
 
@@ -24,32 +25,7 @@
   const TOOLTIP_WIDTH = 200;
   const TOOLTIP_HEIGHT = 180;
 
-  // State abbreviation to full name (built from geography, gaps filled from shared constants)
-  const AB_TO_NAME = {};
-  for (const info of Object.values(geography)) {
-    if (info.stateAb && !AB_TO_NAME[info.stateAb]) {
-      AB_TO_NAME[info.stateAb] = info.state;
-    }
-  }
-  for (const [ab, name] of Object.entries(STATE_NAMES)) {
-    if (!AB_TO_NAME[ab]) AB_TO_NAME[ab] = name;
-  }
-
-  // State FIPS to county count (from geography data, using FIPS prefix)
-  const STATE_COUNTY_COUNTS = {};
-  {
-    const seenByState = {};
-    for (const info of Object.values(geography)) {
-      for (const c of info.counties) {
-        const sf = c.fips.substring(0, STATE_FIPS_LENGTH);
-        if (!seenByState[sf]) seenByState[sf] = new Set();
-        seenByState[sf].add(c.fips);
-      }
-    }
-    for (const [sf, s] of Object.entries(seenByState)) {
-      STATE_COUNTY_COUNTS[sf] = s.size;
-    }
-  }
+  const AB_TO_NAME = { ...STATE_NAMES };
 
   // Pre-index: stateFips -> set of area codes for O(1) state lookups
   const areasByState = {};
@@ -68,11 +44,11 @@
 
   let topoData = null;
   let stateFeatures = [];
-  let countyFeatures = [];
+  let areaFeatures = [];
   let stateMesh = null;
   let nationMesh = null;
 
-  let svg, stateGroup, countyGroup, borderGroup;
+  let svg, stateGroup, areaGroup, borderGroup;
   let path;
   let zoom;
 
@@ -85,11 +61,11 @@
   }
 
   onMount(async () => {
-    const resp = await fetch(`${base}/data/us-counties.json`);
+    const resp = await fetch(`${base}/data/us-areas.json`);
     topoData = await resp.json();
 
     stateFeatures = topojson.feature(topoData, topoData.objects.states).features;
-    countyFeatures = topojson.feature(topoData, topoData.objects.counties).features;
+    areaFeatures = topojson.feature(topoData, topoData.objects.areas).features;
     stateMesh = topojson.mesh(topoData, topoData.objects.states, (a, b) => a !== b);
     nationMesh = topojson.mesh(topoData, topoData.objects.nation);
 
@@ -97,7 +73,7 @@
 
     svg = d3.select(svgEl);
     stateGroup = svg.append('g').attr('class', 'state-group');
-    countyGroup = svg.append('g').attr('class', 'county-group').style('display', 'none');
+    areaGroup = svg.append('g').attr('class', 'area-group').style('display', 'none');
     borderGroup = svg.append('g').attr('class', 'border-group');
 
     borderGroup.append('path')
@@ -119,14 +95,14 @@
       .on('mouseleave', handleHoverLeave)
       .on('click', handleStateClick);
 
-    countyGroup.selectAll('path')
-      .data(countyFeatures)
+    areaGroup.selectAll('path')
+      .data(areaFeatures)
       .join('path')
-      .attr('class', 'county')
+      .attr('class', 'area')
       .attr('d', path)
-      .on('mousemove', handleCountyHover)
+      .on('mousemove', handleAreaHover)
       .on('mouseleave', handleHoverLeave)
-      .on('click', handleCountyClick);
+      .on('click', handleAreaClick);
 
     zoom = d3.zoom()
       .scaleExtent([ZOOM_MIN, ZOOM_MAX])
@@ -137,7 +113,7 @@
       })
       .on('zoom', (event) => {
         stateGroup.attr('transform', event.transform);
-        countyGroup.attr('transform', event.transform);
+        areaGroup.attr('transform', event.transform);
         borderGroup.attr('transform', event.transform);
       });
 
@@ -173,23 +149,19 @@
     }
   }
 
-  function getCountyFillColor(countyFips, colorBy, occupation, currentStateFips) {
-    const countyStateFips = countyFips.substring(0, STATE_FIPS_LENGTH);
-    if (currentStateFips && countyStateFips !== currentStateFips) {
-      return DIMMED_COLOR;
+  function getAreaFillColor(areaCode, colorBy, occupation, currentStateFips) {
+    if (currentStateFips) {
+      const stateAreas = areasByState[currentStateFips];
+      if (!stateAreas || !stateAreas.has(areaCode)) return DIMMED_COLOR;
     }
-
-    const area = fipsToArea[countyFips];
-    if (!area) return NO_DATA_COLOR;
 
     if (occupation) {
       const socData = wageIndex[occupation.soc];
-      if (!socData || !socData[area]) return NO_DATA_COLOR;
-      const val = socData[area][colorBy];
-      if (val == null) return NO_DATA_COLOR;
-      return currentScale ? currentScale(val) : NO_DATA_COLOR;
+      if (!socData || !socData[areaCode]) return NO_DATA_COLOR;
+      const val = socData[areaCode][colorBy];
+      return val != null && currentScale ? currentScale(val) : NO_DATA_COLOR;
     } else {
-      const areaAgg = aggregate.areas[area];
+      const areaAgg = aggregate.areas[areaCode];
       if (!areaAgg || areaAgg[colorBy] == null) return NO_DATA_COLOR;
       return currentScale ? currentScale(areaAgg[colorBy]) : NO_DATA_COLOR;
     }
@@ -201,9 +173,6 @@
     let values = [];
 
     if (currentStateFips) {
-      const stateAb = FIPS_TO_AB[currentStateFips];
-      if (!stateAb) return null;
-
       if (occupation) {
         const socData = wageIndex[occupation.soc];
         if (socData) {
@@ -279,12 +248,28 @@
     }
   }
 
+  function getStateEmployment(stateFips, occupation) {
+    let total = 0;
+    if (occupation) {
+      const socEmp = employmentIndex[occupation.soc];
+      if (!socEmp) return null;
+      for (const area of getAreasInState(stateFips)) {
+        if (socEmp[area] != null) total += socEmp[area];
+      }
+    } else {
+      for (const area of getAreasInState(stateFips)) {
+        if (areaEmploymentTotals[area] != null) total += areaEmploymentTotals[area];
+      }
+    }
+    return total || null;
+  }
+
   function handleStateHover(event, d) {
     if (!onTooltip) return;
     const stateFips = d.id;
     const ab = FIPS_TO_AB[stateFips];
     const name = AB_TO_NAME[ab] || ab || 'Unknown';
-    const countyCount = STATE_COUNTY_COUNTS[stateFips] || 0;
+    const areaCount = areasByState[stateFips]?.size ?? 0;
     const wages = getStateWageData(stateFips);
 
     if (!wages) {
@@ -297,47 +282,40 @@
 
     onTooltip({
       name,
-      sub: countyCount + ' counties',
+      sub: areaCount + ' areas',
       l1: wages.l1,
       l2: wages.l2,
       l3: wages.l3,
       l4: wages.l4,
       avg: wages.avg,
+      emp: getStateEmployment(stateFips, filters.occupation),
       meta: 'State average',
-      hint: 'Click to view counties',
+      hint: 'Click to view areas',
     }, pos.x, pos.y);
   }
 
-  function handleCountyHover(event, d) {
+  function handleAreaHover(event, d) {
     if (!onTooltip) return;
-    const countyFips = d.id;
-    const countyStateFips = countyFips.substring(0, STATE_FIPS_LENGTH);
+    const areaCode = d.id;
+    const info = geography[areaCode];
+    if (!info) return;
 
-    if (mapState.currentState && countyStateFips !== mapState.currentState) return;
-
-    const area = fipsToArea[countyFips];
-    const occupation = filters.occupation;
-
-    let countyName = d.properties?.name || 'Unknown County';
-    let msaName = '';
-    let stateName = '';
-
-    if (area && geography[area]) {
-      msaName = geography[area].name;
-      stateName = geography[area].state;
-      const county = geography[area].counties.find(c => c.fips === countyFips);
-      if (county) countyName = county.name;
-    } else {
-      const stateAb = FIPS_TO_AB[countyStateFips];
-      stateName = AB_TO_NAME[stateAb] || '';
+    if (mapState.currentState) {
+      const stateAreas = areasByState[mapState.currentState];
+      if (!stateAreas || !stateAreas.has(areaCode)) return;
     }
 
+    const occupation = filters.occupation;
     let wages = null;
+    let emp = null;
+
     if (occupation) {
       const socData = wageIndex[occupation.soc];
-      if (socData && socData[area]) wages = socData[area];
+      if (socData && socData[areaCode]) wages = socData[areaCode];
+      emp = employmentIndex[occupation.soc]?.[areaCode] ?? null;
     } else {
-      if (area) wages = aggregate.areas[area] || null;
+      wages = aggregate.areas[areaCode] || null;
+      emp = areaEmploymentTotals[areaCode] ?? null;
     }
 
     const rect = container.getBoundingClientRect();
@@ -345,29 +323,30 @@
 
     if (!wages) {
       onTooltip({
-        name: countyName,
-        sub: stateName,
+        name: info.name,
+        sub: info.state,
         hint: 'No wage data available',
       }, pos.x, pos.y);
       return;
     }
 
+    const countyCount = info.counties.length;
     let meta = '';
-    let hint = '';
     if (occupation) {
       meta = occupation.soc + ' \u00b7 Zone ' + occupation.jobZone + ' \u00b7 ' + occupation.education;
     }
 
     onTooltip({
-      name: countyName,
-      sub: stateName + (msaName ? ' \u00b7 ' + msaName : ''),
+      name: info.name,
+      sub: countyCount + (countyCount === 1 ? ' county' : ' counties'),
       l1: wages.l1,
       l2: wages.l2,
       l3: wages.l3,
       l4: wages.l4,
       avg: wages.avg,
+      emp,
+      empSuppressed: occupation && emp == null,
       meta,
-      hint,
     }, pos.x, pos.y);
   }
 
@@ -376,14 +355,12 @@
   }
 
   function handleStateClick(event, d) {
-    const stateFips = d.id;
-    zoomToState(stateFips);
+    zoomToState(d.id);
   }
 
-  function handleCountyClick(event, d) {
+  function handleAreaClick(event, d) {
     const occupation = filters.occupation;
     if (!occupation) return;
-
     const onetCode = occupation.onetCode;
     if (onetCode) {
       window.open('https://www.onetonline.org/link/summary/' + onetCode, '_blank', 'noopener,noreferrer');
@@ -392,11 +369,8 @@
 
   export function zoomToState(fips) {
     if (!svg || !topoData) return;
-
     const ab = FIPS_TO_AB[fips];
-    if (ab) {
-      filters.stateAb = ab;
-    }
+    if (ab) filters.stateAb = ab;
     mapState.currentState = fips;
   }
 
@@ -410,7 +384,7 @@
     if (!svg || !path) return;
 
     stateGroup.style('display', 'none');
-    countyGroup.style('display', '');
+    areaGroup.style('display', '');
 
     if (activeZoomState === stateFips) return;
     activeZoomState = stateFips;
@@ -425,12 +399,9 @@
     const cy = (y0 + y1) / 2;
 
     const scale = STATE_FILL_RATIO / Math.max(dx / VIEWBOX.w, dy / VIEWBOX.h);
-
     const viewCx = VIEWBOX.x + VIEWBOX.w / 2;
     const viewCy = VIEWBOX.y + VIEWBOX.h / 2;
-
     const translate = [viewCx - scale * cx, viewCy - scale * cy];
-
     const transform = d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale);
 
     svg.call(zoom);
@@ -455,7 +426,7 @@
     }
 
     stateGroup.style('display', '');
-    countyGroup.style('display', 'none');
+    areaGroup.style('display', 'none');
   }
 
   $effect(() => {
@@ -470,8 +441,8 @@
     if (currentStateFips) {
       applyStateZoom(currentStateFips);
 
-      countyGroup.selectAll('path')
-        .attr('fill', (d) => getCountyFillColor(d.id, colorBy, occupation, currentStateFips));
+      areaGroup.selectAll('path')
+        .attr('fill', (d) => getAreaFillColor(d.id, colorBy, occupation, currentStateFips));
     } else {
       applyStateReset();
 
@@ -517,13 +488,13 @@
     stroke-width: 1.5;
   }
 
-  :global(.county) {
-    stroke: #08080e;
-    stroke-width: 0.3;
+  :global(.area) {
+    stroke: #10101a;
+    stroke-width: 0.5;
     cursor: pointer;
   }
 
-  :global(.county:hover) {
+  :global(.area:hover) {
     stroke: #e0e0f0;
     stroke-width: 0.8;
   }
